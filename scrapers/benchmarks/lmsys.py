@@ -40,9 +40,15 @@ RSC_HEADERS = {
     "Accept": "text/html,application/xhtml+xml",
 }
 
-# Which arena leaderboard to pull scores from.
-ARENA_SLUG = "text"
-LEADERBOARD_SLUG = "overall"
+# (arenaSlug, leaderboardSlug) → benchmark_name stored in DB
+LEADERBOARDS: list[tuple[str, str, str]] = [
+    ("text",   "overall",               "arena-elo"),
+    ("text",   "coding",                "arena-elo-coding"),
+    ("text",   "math",                  "arena-elo-math"),
+    ("text",   "hard-prompts",          "arena-elo-hard"),
+    ("vision", "overall",               "arena-elo-vision"),
+    ("text",   "instruction-following", "arena-elo-if"),
+]
 
 
 class LMSysArenaScraper(BenchmarkScraper):
@@ -52,70 +58,66 @@ class LMSysArenaScraper(BenchmarkScraper):
         result = ScrapeResult(benchmark=self.benchmark)
         today = date.today()
 
-        entries = self._fetch_entries()
-        seen: set[str] = set()  # dedupe by model_id within one scrape run
-
-        for entry in entries:
-            name = entry.get("modelDisplayName", "")
-            rating = entry.get("rating")
-            if not name or rating is None:
-                continue
-            model_id = resolve_model_id(name)
-            if not model_id or model_id in seen:
-                continue
-            seen.add(model_id)
-
-            try:
-                score = float(rating)
-            except (TypeError, ValueError):
-                continue
-
-            result.benchmarks.append(
-                BenchmarkRecord(
-                    model_id=model_id,
-                    benchmark_name="arena-elo",
-                    score=score,
-                    score_unit="elo",
-                    source=SOURCE_LABEL,
-                    source_url=HOMEPAGE,
-                    measured_at=today,
-                )
-            )
-
-        if not result.benchmarks:
-            print(f"  [lmsys] warning: 0 entries resolved — mapping may need updating")
-        else:
-            print(f"  [lmsys] resolved {len(result.benchmarks)} arena-elo entries")
-
-        return result
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
-    def _fetch_entries(self) -> list[dict]:
-        """Fetch the RSC payload and return entries list for the target leaderboard."""
         try:
             resp = fetch_static(RSC_URL, timeout=30, headers=RSC_HEADERS)
             body = resp.html
         except Exception as e:
             print(f"  [lmsys] fetch failed: {e}")
-            return []
+            return result
 
         leaderboards = _extract_leaderboards(body)
         if not leaderboards:
             print("  [lmsys] could not extract leaderboards from RSC payload")
-            return []
+            return result
 
+        # Index available leaderboards for O(1) lookup
+        lb_index: dict[tuple[str, str], list[dict]] = {}
         for lb in leaderboards:
-            if lb.get("arenaSlug") == ARENA_SLUG and lb.get("leaderboardSlug") == LEADERBOARD_SLUG:
-                entries = lb.get("entries", [])
-                print(f"  [lmsys] found {len(entries)} raw entries in {ARENA_SLUG}/{LEADERBOARD_SLUG}")
-                return entries
+            key = (lb.get("arenaSlug", ""), lb.get("leaderboardSlug", ""))
+            lb_index[key] = lb.get("entries", [])
 
-        slugs = [(lb.get("arenaSlug"), lb.get("leaderboardSlug")) for lb in leaderboards]
-        print(f"  [lmsys] leaderboard {ARENA_SLUG}/{LEADERBOARD_SLUG} not found; available: {slugs}")
-        return []
+        available = list(lb_index.keys())
+        total = 0
+
+        for arena_slug, lb_slug, bench_name in LEADERBOARDS:
+            entries = lb_index.get((arena_slug, lb_slug))
+            if entries is None:
+                print(f"  [lmsys] {arena_slug}/{lb_slug} not found; available: {available}")
+                continue
+
+            seen: set[str] = set()
+            count = 0
+            for entry in entries:
+                name = entry.get("modelDisplayName", "")
+                rating = entry.get("rating")
+                if not name or rating is None:
+                    continue
+                model_id = resolve_model_id(name)
+                if not model_id or model_id in seen:
+                    continue
+                seen.add(model_id)
+                try:
+                    score = float(rating)
+                except (TypeError, ValueError):
+                    continue
+                result.benchmarks.append(
+                    BenchmarkRecord(
+                        model_id=model_id,
+                        benchmark_name=bench_name,
+                        score=score,
+                        score_unit="elo",
+                        source=SOURCE_LABEL,
+                        source_url=HOMEPAGE,
+                        measured_at=today,
+                    )
+                )
+                count += 1
+            total += count
+            print(f"  [lmsys] {bench_name}: {count} entries")
+
+        if total == 0:
+            print("  [lmsys] warning: 0 entries resolved across all leaderboards")
+        return result
 
 
 # ---------------------------------------------------------------------------

@@ -22,6 +22,11 @@ export type ModelOverview = {
   currency: string | null;
   price_effective_date: string | null;
   arena_elo: number | null;
+  arena_elo_coding: number | null;
+  arena_elo_math: number | null;
+  arena_elo_hard: number | null;
+  arena_elo_vision: number | null;
+  arena_elo_if: number | null;
   first_seen: string;
   last_seen: string;
 };
