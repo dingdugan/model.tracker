@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from ..core.schema import ModelRecord
 from ._catalog_scraper import CatalogVendorScraper
 
@@ -21,6 +23,7 @@ class GoogleScraper(CatalogVendorScraper):
         ModelRecord(vendor_id="google", slug="gemini-2-5-flash-lite", name="Gemini 2.5 Flash-Lite", family="gemini",
                     context_window=1_000_000, modalities=["text","image"]),
         ModelRecord(vendor_id="google", slug="gemini-2-0-flash", name="Gemini 2.0 Flash", family="gemini",
+                    release_date=date(2024, 12, 11),
                     context_window=1_000_000, modalities=["text","image","audio","video"]),
         ModelRecord(vendor_id="google", slug="gemma-3-27b", name="Gemma 3 27B", family="gemma",
                     context_window=128_000, modalities=["text","image"], is_open_weight=True,

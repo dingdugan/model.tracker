@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from ..core.schema import ModelRecord
 from ._catalog_scraper import CatalogVendorScraper
 
@@ -16,6 +18,7 @@ class HunyuanScraper(CatalogVendorScraper):
                     context_window=256_000, modalities=["text"],
                     description="Tencent Hunyuan flagship hybrid model."),
         ModelRecord(vendor_id="hunyuan", slug="hunyuan-large", name="Hunyuan Large", family="hunyuan",
+                    release_date=date(2024, 11, 5),
                     context_window=256_000, modalities=["text"], is_open_weight=True,
                     parameters_b=389.0),
         ModelRecord(vendor_id="hunyuan", slug="hunyuan-standard", name="Hunyuan Standard", family="hunyuan",

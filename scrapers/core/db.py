@@ -115,7 +115,34 @@ class Database:
         if self.dry_run:
             print(f"  [dry-run] {b.benchmark_name} {b.model_id}: {b.score} {b.score_unit}")
             return
+        if self._benchmark_already_recorded(b):
+            return
         self.client.table("benchmark_scores").insert(row).execute()
+
+    def _benchmark_already_recorded(self, b: BenchmarkRecord) -> bool:
+        """De-dupe by (model_id, benchmark_name, source, measured_at).
+
+        Rationale: when measured_at advances we want to record the new
+        measurement even if the score happens to equal the previous one
+        (the data point is still meaningful — "still 91.5% on the new
+        cycle"). But repeated reads of the same measurement should not
+        clutter history. When measured_at is null we fall back to
+        de-duping on the scraped date itself.
+        """
+        q = (
+            self.client.table("benchmark_scores")
+            .select("id, measured_at, scraped_at")
+            .eq("model_id", b.model_id)
+            .eq("benchmark_name", b.benchmark_name)
+            .eq("source", b.source)
+        )
+        if b.measured_at is not None:
+            q = q.eq("measured_at", b.measured_at.isoformat())
+        else:
+            # No reported measurement date — avoid re-recording within the same UTC day.
+            q = q.is_("measured_at", "null").gte("scraped_at", date.today().isoformat())
+        res = q.limit(1).execute()
+        return bool(res.data)
 
     # ──────────────────────────────────────────────────────────────────────
     # High-level: persist a ScrapeResult atomically (best-effort)

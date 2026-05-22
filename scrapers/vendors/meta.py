@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from ..core.schema import ModelRecord
 from ._catalog_scraper import CatalogVendorScraper
 
@@ -22,9 +24,11 @@ class MetaScraper(CatalogVendorScraper):
                     context_window=10_000_000, modalities=["text","image"], is_open_weight=True,
                     parameters_b=109.0),
         ModelRecord(vendor_id="meta", slug="llama-3-3-70b", name="Llama 3.3 70B", family="llama",
+                    release_date=date(2024, 12, 6),
                     context_window=128_000, modalities=["text"], is_open_weight=True,
                     parameters_b=70.0),
         ModelRecord(vendor_id="meta", slug="llama-3-1-405b", name="Llama 3.1 405B", family="llama",
+                    release_date=date(2024, 7, 23),
                     context_window=128_000, modalities=["text"], is_open_weight=True,
                     parameters_b=405.0),
     ]

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from ..core.schema import ModelRecord
 from ._catalog_scraper import CatalogVendorScraper
 
@@ -23,8 +25,10 @@ class OpenAIScraper(CatalogVendorScraper):
         ModelRecord(vendor_id="openai", slug="gpt-4.1-mini", name="GPT-4.1 mini", family="gpt",
                     context_window=1_047_576, modalities=["text","image"]),
         ModelRecord(vendor_id="openai", slug="gpt-4o", name="GPT-4o", family="gpt",
+                    release_date=date(2024, 5, 13),
                     context_window=128_000, modalities=["text","image","audio"]),
         ModelRecord(vendor_id="openai", slug="gpt-4o-mini", name="GPT-4o mini", family="gpt",
+                    release_date=date(2024, 7, 18),
                     context_window=128_000, modalities=["text","image"]),
         ModelRecord(vendor_id="openai", slug="o3", name="o3", family="o",
                     context_window=200_000, modalities=["text","image"],

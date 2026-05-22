@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from ..core.schema import ModelRecord
 from ._catalog_scraper import CatalogVendorScraper
 
@@ -12,6 +14,7 @@ class MistralScraper(CatalogVendorScraper):
 
     catalog = [
         ModelRecord(vendor_id="mistral", slug="mistral-large-2", name="Mistral Large 2", family="mistral",
+                    release_date=date(2024, 7, 24),
                     context_window=128_000, modalities=["text"], parameters_b=123.0),
         ModelRecord(vendor_id="mistral", slug="mistral-medium-3", name="Mistral Medium 3", family="mistral",
                     context_window=128_000, modalities=["text","image"]),
@@ -21,8 +24,10 @@ class MistralScraper(CatalogVendorScraper):
         ModelRecord(vendor_id="mistral", slug="codestral-2", name="Codestral 2", family="mistral",
                     context_window=256_000, modalities=["text","code"]),
         ModelRecord(vendor_id="mistral", slug="pixtral-large", name="Pixtral Large", family="mistral",
+                    release_date=date(2024, 11, 18),
                     context_window=128_000, modalities=["text","image"], parameters_b=124.0),
         ModelRecord(vendor_id="mistral", slug="ministral-8b", name="Ministral 8B", family="mistral",
+                    release_date=date(2024, 10, 16),
                     context_window=128_000, modalities=["text"], is_open_weight=True,
                     parameters_b=8.0),
     ]

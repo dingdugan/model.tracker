@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from ..core.schema import ModelRecord
 from ._catalog_scraper import CatalogVendorScraper
 
@@ -25,6 +27,7 @@ class AnthropicScraper(CatalogVendorScraper):
                     context_window=200_000, modalities=["text","image"],
                     description="Fastest and most cost-effective Claude."),
         ModelRecord(vendor_id="anthropic", slug="claude-3-5-sonnet", name="Claude 3.5 Sonnet", family="claude",
+                    release_date=date(2024, 6, 20),
                     context_window=200_000, modalities=["text","image"], status="deprecated"),
     ]
 
