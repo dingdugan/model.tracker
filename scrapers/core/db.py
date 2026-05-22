@@ -44,6 +44,7 @@ class Database:
             "max_output_tokens": m.max_output_tokens,
             "modalities": list(m.modalities),
             "is_open_weight": m.is_open_weight,
+            "license": m.license,
             "parameters_b": m.parameters_b,
             "status": m.status,
             "announcement_url": m.announcement_url,
@@ -52,7 +53,7 @@ class Database:
         }
         # last_seen needs to be a real timestamp — remove if it sneaks through
         row["last_seen"] = None  # let trigger or default refresh; we update via separate query
-        row = {k: v for k, v in row.items() if v is not None or k in {"family", "release_date", "context_window", "max_output_tokens", "parameters_b", "announcement_url", "description"}}
+        row = {k: v for k, v in row.items() if v is not None or k in {"family", "release_date", "context_window", "max_output_tokens", "license", "parameters_b", "announcement_url", "description"}}
 
         if self.dry_run:
             print(f"  [dry-run] upsert model {m.id}: {m.name}")

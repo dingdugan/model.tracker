@@ -41,13 +41,13 @@ def text_array(arr):
 def model_insert(m: ModelRecord) -> str:
     return (
         "insert into models (id, vendor_id, slug, name, family, release_date, "
-        "context_window, max_output_tokens, modalities, is_open_weight, "
+        "context_window, max_output_tokens, modalities, is_open_weight, license, "
         "parameters_b, status, announcement_url, description) values ("
         f"{q(m.id)}, {q(m.vendor_id)}, {q(m.slug)}, {q(m.name)}, "
         f"{q(m.family)}, "
         f"{q(m.release_date.isoformat()) if m.release_date else 'null'}, "
         f"{num(m.context_window)}, {num(m.max_output_tokens)}, "
-        f"{text_array(m.modalities)}, {bool_(m.is_open_weight)}, "
+        f"{text_array(m.modalities)}, {bool_(m.is_open_weight)}, {q(m.license)}, "
         f"{num(m.parameters_b)}, {q(m.status)}, "
         f"{q(m.announcement_url)}, {q(m.description)}"
         ") on conflict (id) do update set "
@@ -56,6 +56,7 @@ def model_insert(m: ModelRecord) -> str:
         "max_output_tokens=excluded.max_output_tokens, "
         "modalities=excluded.modalities, "
         "is_open_weight=excluded.is_open_weight, "
+        "license=excluded.license, "
         "parameters_b=excluded.parameters_b, "
         "status=excluded.status, description=excluded.description, "
         "last_seen=now();"

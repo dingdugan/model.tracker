@@ -27,6 +27,7 @@ class GoogleScraper(CatalogVendorScraper):
                     context_window=1_000_000, modalities=["text","image","audio","video"]),
         ModelRecord(vendor_id="google", slug="gemma-3-27b", name="Gemma 3 27B", family="gemma",
                     context_window=128_000, modalities=["text","image"], is_open_weight=True,
+                    license="gemma",
                     parameters_b=27.0),
     ]
 

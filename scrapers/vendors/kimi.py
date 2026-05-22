@@ -14,6 +14,7 @@ class KimiScraper(CatalogVendorScraper):
     catalog = [
         ModelRecord(vendor_id="kimi", slug="kimi-k2", name="Kimi K2", family="kimi",
                     context_window=128_000, modalities=["text"], is_open_weight=True,
+                    license="mit",
                     parameters_b=1000.0, description="Moonshot's flagship MoE model."),
         ModelRecord(vendor_id="kimi", slug="moonshot-v1-128k", name="Moonshot v1 128k", family="kimi",
                     context_window=128_000, modalities=["text"]),

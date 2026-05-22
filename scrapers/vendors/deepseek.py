@@ -15,17 +15,21 @@ class DeepSeekScraper(CatalogVendorScraper):
     catalog = [
         ModelRecord(vendor_id="deepseek", slug="deepseek-v3-2", name="DeepSeek V3.2", family="deepseek",
                     context_window=128_000, modalities=["text"], is_open_weight=True,
+                    license="mit",
                     parameters_b=671.0, description="MoE flagship; ~37B active."),
         ModelRecord(vendor_id="deepseek", slug="deepseek-v3-1", name="DeepSeek V3.1", family="deepseek",
                     context_window=128_000, modalities=["text"], is_open_weight=True,
+                    license="mit",
                     parameters_b=671.0),
         ModelRecord(vendor_id="deepseek", slug="deepseek-r1", name="DeepSeek R1", family="deepseek",
                     release_date=date(2025, 1, 20),
                     context_window=128_000, modalities=["text"], is_open_weight=True,
+                    license="mit",
                     parameters_b=671.0, description="Open reasoning model."),
         ModelRecord(vendor_id="deepseek", slug="deepseek-v2-5", name="DeepSeek V2.5", family="deepseek",
                     release_date=date(2024, 9, 5),
                     context_window=128_000, modalities=["text"], is_open_weight=True,
+                    license="mit",
                     parameters_b=236.0, status="deprecated"),
     ]
 

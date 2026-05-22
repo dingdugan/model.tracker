@@ -22,6 +22,7 @@ class CohereScraper(CatalogVendorScraper):
                     context_window=128_000, modalities=["text"], parameters_b=7.0),
         ModelRecord(vendor_id="cohere", slug="aya-expanse-32b", name="Aya Expanse 32B", family="aya",
                     context_window=128_000, modalities=["text"], is_open_weight=True,
+                    license="cc-by-nc-4.0",
                     parameters_b=32.0),
     ]
 

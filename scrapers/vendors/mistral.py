@@ -20,6 +20,7 @@ class MistralScraper(CatalogVendorScraper):
                     context_window=128_000, modalities=["text","image"]),
         ModelRecord(vendor_id="mistral", slug="mistral-small-3-2", name="Mistral Small 3.2", family="mistral",
                     context_window=128_000, modalities=["text"], is_open_weight=True,
+                    license="apache-2.0",
                     parameters_b=24.0),
         ModelRecord(vendor_id="mistral", slug="codestral-2", name="Codestral 2", family="mistral",
                     context_window=256_000, modalities=["text","code"]),
@@ -29,6 +30,7 @@ class MistralScraper(CatalogVendorScraper):
         ModelRecord(vendor_id="mistral", slug="ministral-8b", name="Ministral 8B", family="mistral",
                     release_date=date(2024, 10, 16),
                     context_window=128_000, modalities=["text"], is_open_weight=True,
+                    license="apache-2.0",
                     parameters_b=8.0),
     ]
 

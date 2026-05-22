@@ -31,6 +31,7 @@ export default async function ModelPage({ params }: { params: Promise<{ id: stri
           <h1 className="text-3xl font-semibold tracking-tight mt-1 flex items-center gap-3">
             {model.name}
             {model.is_open_weight && <Badge tone="ok">open-weight</Badge>}
+            {model.license && <Badge tone="muted">{model.license}</Badge>}
             {model.status !== "active" && <Badge tone={model.status === "preview" ? "warn" : "muted"}>{model.status}</Badge>}
           </h1>
           <p className="text-ink-muted mt-1">

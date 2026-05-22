@@ -164,6 +164,7 @@ Given the page text below, return a STRICT JSON object with this shape:
       "max_output_tokens": integer or null,
       "modalities":        ["text", "image", ...],
       "is_open_weight":    boolean,
+      "license":           "apache-2.0|mit|llama-4|gemma|proprietary|null",
       "parameters_b":      number or null,
       "status":            "active|preview|deprecated|retired",
       "description":       "one-sentence summary or null"

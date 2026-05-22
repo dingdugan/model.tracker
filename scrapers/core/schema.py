@@ -24,6 +24,7 @@ class ModelRecord(BaseModel):
     max_output_tokens: Optional[int] = None
     modalities: list[Modality] = Field(default_factory=lambda: ["text"])
     is_open_weight: bool = False
+    license: Optional[str] = None       # SPDX id or shorthand: 'apache-2.0','mit','llama-4','gemma','proprietary'
     parameters_b: Optional[float] = None
     status: ModelStatus = "active"
     announcement_url: Optional[str] = None
