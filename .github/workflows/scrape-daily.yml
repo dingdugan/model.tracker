@@ -1,0 +1,65 @@
+name: scrape-daily
+
+on:
+  schedule:
+    - cron: "0 2 * * *"           # 02:00 UTC every day
+  workflow_dispatch:               # manual trigger
+    inputs:
+      vendor:
+        description: "Run only this vendor (slug)"
+        required: false
+      dry-run:
+        description: "Don't write to Supabase"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write                     # so we can file an issue on failure
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SUPABASE_URL:          ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY:  ${{ secrets.SUPABASE_SERVICE_KEY }}
+      ANTHROPIC_API_KEY:     ${{ secrets.ANTHROPIC_API_KEY }}
+      EXTRACTOR_MODEL:       claude-haiku-4-5
+      VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+      PLAYWRIGHT_HEADLESS:   "1"
+      PYTHONUNBUFFERED:      "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install Python deps
+        run: pip install -r scrapers/requirements.txt
+
+      - name: Install Playwright browsers
+        run: python -m playwright install --with-deps chromium
+
+      - name: Run scrapers
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.vendor }}" ]; then ARGS="$ARGS --vendor ${{ inputs.vendor }}"; fi
+          if [ "${{ inputs.dry-run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          python -m scrapers.run $ARGS
+
+      - name: Open issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              title: `Scraper failed on ${new Date().toISOString().slice(0,10)}`,
+              body:  `The daily scraper workflow failed.\n\nSee logs: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              labels: ['scraper-failure']
+            })

@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light dark;
+}
+
+html {
+  font-feature-settings: "cv03", "cv04", "cv11";
+}
+
+body {
+  background: theme(colors.paper.DEFAULT);
+  color: theme(colors.ink.DEFAULT);
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-color-scheme: dark) {
+  body {
+    background: theme(colors.ink.DEFAULT);
+    color: theme(colors.paper.DEFAULT);
+  }
+}
+
+/* Tabular numerals so price tables align */
+table, td.num, th.num {
+  font-variant-numeric: tabular-nums;
+}
