@@ -151,8 +151,28 @@
 
 ## Phase 11 — GitHub 推送 + Actions 配置
 
-- [ ] 初始 commit
-- [ ] 创建 GitHub repo + push
-- [ ] 创建 Vercel deploy hook
-- [ ] 设置 GitHub Actions Secrets（部分用户提供）
-- [ ] 触发一次 workflow 验证 cron 跑通
+- [x] 初始 commit
+  证据: 本会话 `git commit -m "Initial release..."` → SHA `9d25d13`，72 files / 6934 lines
+- [x] 创建 GitHub repo + push
+  证据: `gh repo create dingdugan/model.tracker --public --push` 返回 `https://github.com/dingdugan/model.tracker`
+- [x] 连接 Vercel ↔ GitHub（替代 Deploy Hook）
+  证据: 本会话 `vercel git connect https://github.com/dingdugan/model.tracker` 返回 "Connected"。push 到 main 会自动触发部署；前端 `revalidate=1800` 也会自动拉取新数据
+- [x] GitHub Actions 公开 Secrets
+  证据: `gh secret list --repo dingdugan/model.tracker` 列出 SUPABASE_URL + EXTRACTOR_MODEL
+- [x] GitHub Actions 敏感 Secrets（用户手工设置）
+  证据: 用户在本地 `gh secret set SUPABASE_SERVICE_KEY` + `ANTHROPIC_API_KEY`；workflow run 26266492760 成功完成（Run scrapers ✓）
+- [x] 触发一次 workflow 验证 cron 跑通
+  证据: workflow run 26266492760 在 5m0s 内 ✓ 完成；"Open issue on failure" 步骤 skipped
+
+## Phase 12 — LLM 幻觉污染修复（紧急）
+
+- [x] 识别污染：首次 cron 写入 75 个幻觉/跨厂商 model + 36 个垃圾 price + 污染 snapshot
+  证据: 本会话 SQL `select vendor_id, count(*), string_agg(slug,...) ...` 列出 qwen=30/hunyuan=12/cohere=11/anthropic=11/xai=4/kimi=3/mistral=2/deepseek=2，包含 `claude-opus-47`、`qwen3.7-max`、`happyhorse-1.0-i2v` 等明显幻觉
+- [x] 清理污染：删除 75 个 model + 40 个重复 bench 行 + 重置 snapshot
+  证据: 本会话 SQL `delete from models ... returning` 返回 `removed_models=75`；`delete from benchmark_scores ... returning` 返回 `removed_benchmark_rows=40`；`update daily_snapshots set ... new_models='[]' ... where snapshot_date=current_date` 返回 `new_count=0`
+- [x] 修复 `vendors/_helpers.py:llm_fallback_into_result`
+  证据: 新策略 — LLM 输出仅用于 refresh catalog 已知 slug 的价格；未知 slug 静默丢弃。代码包含 `_canon()` 归一化函数、`if not lookup: return` 守卫、`if not model_id: continue` 拒绝逻辑。本会话 mock 单测验证：catalog 2 个模型保留、命中 2 个价格、拒绝 1 个跨厂商、拒绝 1 个幻觉
+- [x] Commit + push 修复
+  证据: commit `b13cbb9` "fix(scrapers): forbid LLM fallback from creating new model rows"，推到 origin/main
+- [x] 重跑 workflow 验证修复在生产环境工作
+  证据: workflow run 26266816080 在 4m52s 内 ✓ 完成；本会话 SQL 验证 `models_new_from_run=0`、`errors_from_run=0`、`snapshot.new_models=[]`、price_changes=6 全是真实价格差（2 model × 3 field）
