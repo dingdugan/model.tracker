@@ -194,6 +194,67 @@ Page text:
 """
 
 
+def _repair_truncated_json(text: str) -> str:
+    """Attempt to close incomplete/truncated JSON.
+
+    Strategy (in order of preference, to recover the most clean data possible):
+      1. If it already parses, return as-is.
+      2. Trim back to the last complete array element (`},` boundary) and try
+         a small set of bracket-only closures. This drops any partial tail
+         object — cleaner than closing it with garbage data.
+      3. As a last resort, append quote-closing suffixes to keep whatever is
+         in the buffer (may leave a truncated trailing string value).
+    """
+    # Fast path: already parses.
+    try:
+        json.loads(text)
+        return text
+    except json.JSONDecodeError:
+        pass
+
+    bracket_closures = [
+        ']}',
+        ']}}',
+        '}]}',
+        '}]}}',
+        ']}, "prices": []}',
+        '}], "prices": []}',
+    ]
+
+    # Prefer trim-back to last complete array element. This drops a partial
+    # tail object entirely — better than recovering it with garbage data.
+    cut_points: list[int] = []
+    for match in re.finditer(r'\},', text):
+        cut_points.append(match.start())  # position of the `}` (comma excluded by slice)
+    for cut in sorted(set(cut_points), reverse=True):
+        trimmed = text[: cut + 1]
+        for suffix in bracket_closures:
+            try:
+                json.loads(trimmed + suffix)
+                return trimmed + suffix
+            except json.JSONDecodeError:
+                continue
+
+    # Truncation at a bracket boundary (no partial tail) — just append closures.
+    for suffix in bracket_closures:
+        try:
+            json.loads(text + suffix)
+            return text + suffix
+        except json.JSONDecodeError:
+            continue
+
+    # Last resort: close a dangling string so at least the well-formed prefix
+    # parses (the consumer can filter out partial entries by name lookup).
+    for suffix in ['"}]}', '"}]}}', '"}], "prices": []}']:
+        try:
+            json.loads(text + suffix)
+            return text + suffix
+        except json.JSONDecodeError:
+            continue
+
+    return text
+
+
 def llm_extract(page_text: str, *, model: Optional[str] = None) -> dict[str, Any]:
     """Returns {'models': [...], 'prices': [...]} as a dict. Raises on JSON parse failure."""
     model = model or os.environ.get("EXTRACTOR_MODEL", "claude-haiku-4-5")
@@ -201,7 +262,7 @@ def llm_extract(page_text: str, *, model: Optional[str] = None) -> dict[str, Any
 
     resp = _client().messages.create(
         model=model,
-        max_tokens=4096,
+        max_tokens=8192,
         messages=[{"role": "user", "content": prompt}],
         # cache the long prompt prefix — Anthropic returns better $$ for repeated calls
         system=[
@@ -217,4 +278,7 @@ def llm_extract(page_text: str, *, model: Optional[str] = None) -> dict[str, Any
     # Trim accidental markdown fences if the model misbehaves
     text = re.sub(r"^```(?:json)?\s*", "", text.strip())
     text = re.sub(r"\s*```$", "", text)
+
+    # Attempt to repair truncated JSON
+    text = _repair_truncated_json(text)
     return json.loads(text)

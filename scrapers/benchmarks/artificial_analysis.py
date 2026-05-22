@@ -109,11 +109,13 @@ class ArtificialAnalysisScraper(BenchmarkScraper):
         import re
         from anthropic import Anthropic
 
+        from ..core.extractor import _repair_truncated_json
+
         client = Anthropic()
         model = os.environ.get("EXTRACTOR_MODEL", "claude-haiku-4-5")
         resp = client.messages.create(
             model=model,
-            max_tokens=4096,
+            max_tokens=16384,
             messages=[{"role": "user", "content": PROMPT.replace("{TEXT}", text)}],
             system=[{"type": "text", "text": "You output STRICT JSON only.",
                      "cache_control": {"type": "ephemeral"}}],
@@ -121,4 +123,5 @@ class ArtificialAnalysisScraper(BenchmarkScraper):
         raw = "".join(b.text for b in resp.content if hasattr(b, "text"))
         raw = re.sub(r"^```(?:json)?\s*", "", raw.strip())
         raw = re.sub(r"\s*```$", "", raw)
+        raw = _repair_truncated_json(raw)
         return json.loads(raw)
