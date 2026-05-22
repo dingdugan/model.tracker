@@ -1,13 +1,13 @@
 import { supabase } from "./supabase";
 import type {
   BenchmarkScore,
+  ChangelogDay,
   DailySnapshot,
   ModelOverview,
   PriceHistoryPoint,
   Vendor,
 } from "./types";
 
-// Revalidate every 30 min — scraper triggers a redeploy anyway.
 export const revalidate = 1800;
 
 export async function getModels(): Promise<ModelOverview[]> {
@@ -55,32 +55,6 @@ export async function getCurrentBenchmarks(modelId: string): Promise<BenchmarkSc
   return (data ?? []) as BenchmarkScore[];
 }
 
-export async function getLeaderboard(benchmark: string, limit = 30): Promise<Array<BenchmarkScore & { name: string; vendor_name: string }>> {
-  const { data, error } = await supabase
-    .from("current_benchmarks")
-    .select("model_id, score, score_unit, score_max, source, measured_at")
-    .eq("benchmark_name", benchmark)
-    .order("score", { ascending: false })
-    .limit(limit);
-  if (error) throw error;
-  const scores = (data ?? []) as BenchmarkScore[];
-  if (scores.length === 0) return [];
-
-  const ids = scores.map((s) => s.model_id);
-  const { data: models, error: e2 } = await supabase
-    .from("models_overview")
-    .select("id, name, vendor_name")
-    .in("id", ids);
-  if (e2) throw e2;
-  const lookup = new Map((models ?? []).map((m: any) => [m.id, m]));
-  return scores
-    .map((s) => {
-      const m = lookup.get(s.model_id);
-      return m ? { ...s, name: m.name, vendor_name: m.vendor_name } : null;
-    })
-    .filter((x): x is BenchmarkScore & { name: string; vendor_name: string } => x !== null);
-}
-
 export async function getRecentSnapshots(days = 30): Promise<DailySnapshot[]> {
   const { data, error } = await supabase
     .from("daily_snapshots")
@@ -102,12 +76,71 @@ export async function getLatestSnapshot(): Promise<DailySnapshot | null> {
   return (data as DailySnapshot) ?? null;
 }
 
-export async function getBenchmarkNames(): Promise<string[]> {
-  const { data, error } = await supabase
-    .from("benchmark_scores")
-    .select("benchmark_name");
-  if (error) throw error;
-  const set = new Set<string>();
-  (data ?? []).forEach((r: any) => set.add(r.benchmark_name));
-  return Array.from(set).sort();
+export async function getChangelog(days = 60): Promise<ChangelogDay[]> {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+  const [eventsRes, snapshotsRes] = await Promise.all([
+    supabase
+      .from("price_change_events")
+      .select("model_id, changed_at, input_old, input_new, output_old, output_new, cached_input_old, cached_input_new, currency")
+      .gte("changed_at", cutoffStr)
+      .order("changed_at", { ascending: false }),
+    supabase
+      .from("daily_snapshots")
+      .select("snapshot_date, new_models")
+      .gte("snapshot_date", cutoffStr)
+      .order("snapshot_date", { ascending: false }),
+  ]);
+
+  const events = eventsRes.data ?? [];
+  const snapshots = snapshotsRes.data ?? [];
+
+  // Fetch model names for price events
+  const modelIds = [...new Set(events.map((e: any) => e.model_id))];
+  const nameMap = new Map<string, string>();
+  if (modelIds.length > 0) {
+    const { data: names } = await supabase
+      .from("models")
+      .select("id, name")
+      .in("id", modelIds);
+    (names ?? []).forEach((m: any) => nameMap.set(m.id, m.name));
+  }
+
+  // Build per-date map
+  const byDate = new Map<string, ChangelogDay>();
+
+  for (const snap of snapshots) {
+    byDate.set(snap.snapshot_date, {
+      date: snap.snapshot_date,
+      newModels: (snap.new_models ?? []).map((m: any) => ({
+        id: m.id,
+        name: m.name,
+        vendor: m.vendor,
+      })),
+      priceChanges: [],
+    });
+  }
+
+  for (const ev of events) {
+    const d = ev.changed_at;
+    if (!byDate.has(d)) {
+      byDate.set(d, { date: d, newModels: [], priceChanges: [] });
+    }
+    byDate.get(d)!.priceChanges.push({
+      model_id: ev.model_id,
+      model_name: nameMap.get(ev.model_id) ?? ev.model_id.split("/")[1],
+      changed_at: ev.changed_at,
+      input_old: ev.input_old,
+      input_new: ev.input_new,
+      output_old: ev.output_old,
+      output_new: ev.output_new,
+      cached_input_old: ev.cached_input_old,
+      cached_input_new: ev.cached_input_new,
+      currency: ev.currency ?? "USD",
+    });
+  }
+
+  return Array.from(byDate.values()).sort((a, b) => b.date.localeCompare(a.date));
 }

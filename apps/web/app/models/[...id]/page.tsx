@@ -27,7 +27,7 @@ export default async function ModelPage({ params }: { params: Promise<{ id: stri
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-end gap-4">
         <div className="flex-1">
-          <Link href="/models" className="text-xs text-ink-muted hover:text-accent">← All models</Link>
+          <Link href="/" className="text-xs text-ink-muted hover:text-accent">← All models</Link>
           <h1 className="text-3xl font-semibold tracking-tight mt-1 flex items-center gap-3">
             {model.name}
             {model.is_open_weight && <Badge tone="ok">open-weight</Badge>}

@@ -12,6 +12,7 @@ export type ModelOverview = {
   modalities: string[];
   is_open_weight: boolean;
   parameters_b: number | null;
+  license: string | null;
   status: "active" | "preview" | "deprecated" | "retired";
   announcement_url: string | null;
   description: string | null;
@@ -33,7 +34,6 @@ export type Vendor = {
   pricing_url: string | null;
   models_url: string | null;
   blog_url: string | null;
-  is_open_source: boolean;
 };
 
 export type PriceHistoryPoint = {
@@ -64,4 +64,23 @@ export type DailySnapshot = {
   price_changes: Array<{ model_id: string; field: string; old: number | null; new: number | null }>;
   status_changes: Array<{ id: string; old_status: string; new_status: string }>;
   bench_changes: Array<{ model_id: string; benchmark: string; old: number; new: number }>;
+};
+
+export type PriceChangeEvent = {
+  model_id: string;
+  model_name: string;
+  changed_at: string;
+  input_old: number | null;
+  input_new: number | null;
+  output_old: number | null;
+  output_new: number | null;
+  cached_input_old: number | null;
+  cached_input_new: number | null;
+  currency: string;
+};
+
+export type ChangelogDay = {
+  date: string;
+  newModels: Array<{ id: string; name: string; vendor: string }>;
+  priceChanges: PriceChangeEvent[];
 };

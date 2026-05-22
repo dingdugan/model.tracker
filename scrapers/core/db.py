@@ -77,29 +77,42 @@ class Database:
         if self.dry_run:
             print(f"  [dry-run] price {p.model_id}: in=${p.input_per_mtok} out=${p.output_per_mtok}/Mtok")
             return
-        if self._price_already_current(p):
-            return
+        prev = self._latest_price(p.model_id)
+        if prev and self._price_matches(prev, p):
+            return  # unchanged
+        if prev:  # real change — record it
+            event: dict[str, Any] = {
+                "model_id":          p.model_id,
+                "changed_at":        date.today().isoformat(),
+                "input_old":         prev.get("input_per_mtok"),
+                "input_new":         p.input_per_mtok,
+                "output_old":        prev.get("output_per_mtok"),
+                "output_new":        p.output_per_mtok,
+                "cached_input_old":  prev.get("cached_input_per_mtok"),
+                "cached_input_new":  p.cached_input_per_mtok,
+                "currency":          p.currency,
+            }
+            self.client.table("price_change_events").insert(event).execute()
         self.client.table("prices").insert(row).execute()
 
-    def _price_already_current(self, p: PriceRecord) -> bool:
-        """Skip insert if latest price row matches exactly — avoids cluttering history with duplicates."""
+    def _latest_price(self, model_id: str) -> Optional[dict[str, Any]]:
         res = (
             self.client.table("prices")
             .select("input_per_mtok,output_per_mtok,cached_input_per_mtok,currency")
-            .eq("model_id", p.model_id)
+            .eq("model_id", model_id)
             .order("effective_date", desc=True)
             .order("scraped_at", desc=True)
             .limit(1)
             .execute()
         )
-        if not res.data:
-            return False
-        last = res.data[0]
+        return res.data[0] if res.data else None
+
+    def _price_matches(self, prev: dict[str, Any], p: PriceRecord) -> bool:
         return (
-            _eq_num(last.get("input_per_mtok"),        p.input_per_mtok)
-            and _eq_num(last.get("output_per_mtok"),   p.output_per_mtok)
-            and _eq_num(last.get("cached_input_per_mtok"), p.cached_input_per_mtok)
-            and last.get("currency", "USD") == p.currency
+            _eq_num(prev.get("input_per_mtok"),        p.input_per_mtok)
+            and _eq_num(prev.get("output_per_mtok"),   p.output_per_mtok)
+            and _eq_num(prev.get("cached_input_per_mtok"), p.cached_input_per_mtok)
+            and prev.get("currency", "USD") == p.currency
         )
 
     def append_benchmark(self, b: BenchmarkRecord) -> None:

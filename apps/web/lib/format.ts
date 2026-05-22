@@ -57,6 +57,14 @@ export function countryFlag(code: string | null | undefined): string {
   return FLAGS[code] ?? code;
 }
 
+export function fmtPctChange(oldVal: number | null | undefined, newVal: number | null | undefined): string {
+  if (oldVal == null || newVal == null) return "—";
+  if (oldVal === 0) return newVal > 0 ? "new" : "—";
+  const pct = ((newVal - oldVal) / Math.abs(oldVal)) * 100;
+  const sign = pct > 0 ? "+" : "";
+  return `${sign}${pct.toFixed(1)}%`;
+}
+
 export function statusBadge(status: string): { label: string; cls: string } {
   switch (status) {
     case "active":     return { label: "active",     cls: "bg-emerald-100 text-emerald-900" };
