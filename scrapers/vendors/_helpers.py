@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from typing import Optional
 
@@ -16,6 +17,15 @@ from ..core.extractor import (
 from ..core.schema import ModelRecord, PriceRecord, ScrapeResult
 
 
+def _canon(s: str) -> str:
+    """Canonicalize a slug for matching: lowercase, collapse separators."""
+    s = (s or "").strip().lower()
+    # Treat "/", "_", ".", " " all as the same separator, then collapse runs of "-".
+    s = re.sub(r"[\s/_.]+", "-", s)
+    s = re.sub(r"-+", "-", s).strip("-")
+    return s
+
+
 def llm_fallback_into_result(
     *,
     result: ScrapeResult,
@@ -23,41 +33,53 @@ def llm_fallback_into_result(
     source_url: str,
     vendor_id: str,
 ) -> None:
-    """Run LLM extraction on cleaned HTML and merge results into `result`."""
+    """Run LLM extraction on cleaned HTML and merge results into `result`.
+
+    SAFETY POLICY (after 2026-05-21 LLM-hallucination incident):
+    LLM output is used ONLY to refresh prices on models that are already
+    declared in the scraper's static catalog. New model rows are NEVER
+    created from LLM output — they must be added to the vendor's catalog
+    list by hand. This prevents two failure modes we hit in production:
+      1. Cross-vendor contamination (vendor pages list third-party models
+         hosted on their platform; LLM attributes them to the wrong vendor).
+      2. Hallucinated future-dated model names (claude-opus-47, qwen3.7-max,
+         mistral-large-3, etc. that don't exist yet).
+    """
     text = clean_text_for_llm(html)
     if not text:
         return
-    data = llm_extract(text)
+    try:
+        data = llm_extract(text)
+    except Exception:
+        return  # No Anthropic key, or LLM returned non-JSON — fail closed.
+
     today = date.today()
-    existing_slugs = {m.slug for m in result.models}
 
-    for m in data.get("models", []):
-        slug = (m.get("slug") or m.get("name") or "").strip().lower().replace(" ", "-")
-        if not slug or slug in existing_slugs:
+    # Build a lookup from canonicalized name/slug → canonical model_id.
+    # Include both the slug and the display name so we tolerate either in LLM output.
+    lookup: dict[str, str] = {}
+    for m in result.models:
+        if m.vendor_id != vendor_id:
             continue
-        existing_slugs.add(slug)
-        record = ModelRecord(
-            vendor_id=vendor_id,
-            slug=slug,
-            name=m.get("name") or slug,
-            family=m.get("family"),
-            release_date=_parse_iso_date(m.get("release_date")),
-            context_window=m.get("context_window"),
-            max_output_tokens=m.get("max_output_tokens"),
-            modalities=m.get("modalities") or ["text"],
-            is_open_weight=bool(m.get("is_open_weight", False)),
-            parameters_b=m.get("parameters_b"),
-            status=m.get("status") or "active",
-            description=m.get("description"),
-        )
-        result.models.append(record)
+        lookup[_canon(m.slug)] = m.id
+        lookup[_canon(m.name)] = m.id
 
-    slug_to_id = {m.slug: m.id for m in result.models}
+    if not lookup:
+        return  # Empty catalog — nothing safe to map LLM output to.
+
+    seen_model_ids: set[str] = set()
+
     for p in data.get("prices", []):
-        slug = (p.get("model_slug") or "").strip().lower().replace(" ", "-")
-        model_id = slug_to_id.get(slug)
-        if not model_id:
+        raw = (p.get("model_slug") or p.get("model_name") or "").strip()
+        if not raw:
             continue
+        model_id = lookup.get(_canon(raw))
+        if not model_id:
+            continue  # LLM mentioned a model not in our catalog — IGNORE.
+        if model_id in seen_model_ids:
+            continue  # Skip duplicate price rows in same payload
+        seen_model_ids.add(model_id)
+
         currency = (p.get("currency") or "USD").upper()
         result.prices.append(
             PriceRecord(
