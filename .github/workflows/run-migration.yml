@@ -1,0 +1,29 @@
+name: Run DB migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      script:
+        description: "Script under scripts/ to run (e.g. dedup_benchmarks.py)"
+        required: true
+        default: "dedup_benchmarks.py"
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r scrapers/requirements.txt
+
+      - name: Run script
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python scripts/${{ github.event.inputs.script }}

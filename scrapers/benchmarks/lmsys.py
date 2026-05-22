@@ -1,13 +1,22 @@
-"""LMSYS Chatbot Arena Elo leaderboard.
+"""LMSYS / Arena (arena.ai) Chatbot Arena Elo leaderboard.
 
-The HuggingFace Space publishes a snapshot CSV/JSON of the leaderboard.
-We try a couple of known endpoints, then fall back to scraping the rendered page.
+arena.ai is a Next.js App Router site. The leaderboard data is embedded in the
+React Server Components (RSC) payload — fetching with the `RSC: 1` header returns
+a text/html stream that contains a large JSON blob with all ranked model entries.
+
+Approach:
+  1. GET https://arena.ai/leaderboard  with header  RSC: 1
+  2. Locate the ``"leaderboards":[{`` token in the response body.
+  3. Use a balanced-bracket extractor to pull the full array (no regex limitations).
+  4. Take entries from the text/overall leaderboard (arenaSlug="text").
+  5. Map modelDisplayName → canonical model_id via _mapping.resolve_model_id.
+  6. Emit one BenchmarkRecord per resolved model; unrecognised models are silently
+     dropped (they are fine — we only track catalog-known models).
 """
 
 from __future__ import annotations
 
-import csv
-import io
+import json
 from datetime import date
 
 from ..core.base import BenchmarkScraper
@@ -16,14 +25,24 @@ from ..core.schema import BenchmarkRecord, ScrapeResult
 from ._mapping import resolve_model_id
 
 
-# Known mirrors that publish the Arena leaderboard as plain CSV.
-CSV_CANDIDATES = [
-    "https://storage.googleapis.com/arena-elo/elo_results.csv",
-    "https://raw.githubusercontent.com/lm-sys/FastChat/main/fastchat/serve/monitor/leaderboard.csv",
-]
-
 SOURCE_LABEL = "lmsys"
-HOMEPAGE = "https://lmarena.ai/leaderboard"
+HOMEPAGE = "https://arena.ai/leaderboard"
+
+# Fetch the RSC payload (text/html) — much smaller than running full JS.
+RSC_URL = "https://arena.ai/leaderboard"
+RSC_HEADERS = {
+    "RSC": "1",
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/136.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml",
+}
+
+# Which arena leaderboard to pull scores from.
+ARENA_SLUG = "text"
+LEADERBOARD_SLUG = "overall"
 
 
 class LMSysArenaScraper(BenchmarkScraper):
@@ -33,19 +52,24 @@ class LMSysArenaScraper(BenchmarkScraper):
         result = ScrapeResult(benchmark=self.benchmark)
         today = date.today()
 
-        rows = self._fetch_rows()
-        for r in rows:
-            name = r.get("model") or r.get("Model") or r.get("name")
-            score_raw = r.get("rating") or r.get("arena_score") or r.get("elo") or r.get("Arena Elo")
-            if not name or score_raw is None:
+        entries = self._fetch_entries()
+        seen: set[str] = set()  # dedupe by model_id within one scrape run
+
+        for entry in entries:
+            name = entry.get("modelDisplayName", "")
+            rating = entry.get("rating")
+            if not name or rating is None:
                 continue
             model_id = resolve_model_id(name)
-            if not model_id:
+            if not model_id or model_id in seen:
                 continue
+            seen.add(model_id)
+
             try:
-                score = float(str(score_raw).replace(",", ""))
-            except ValueError:
+                score = float(rating)
+            except (TypeError, ValueError):
                 continue
+
             result.benchmarks.append(
                 BenchmarkRecord(
                     model_id=model_id,
@@ -57,21 +81,100 @@ class LMSysArenaScraper(BenchmarkScraper):
                     measured_at=today,
                 )
             )
+
+        if not result.benchmarks:
+            print(f"  [lmsys] warning: 0 entries resolved — mapping may need updating")
+        else:
+            print(f"  [lmsys] resolved {len(result.benchmarks)} arena-elo entries")
+
         return result
 
-    def _fetch_rows(self) -> list[dict]:
-        last_error: Exception | None = None
-        for url in CSV_CANDIDATES:
-            try:
-                csv_text = fetch_static(url, timeout=20).html
-                reader = csv.DictReader(io.StringIO(csv_text))
-                rows = list(reader)
-                if rows:
-                    return rows
-            except Exception as e:
-                last_error = e
-                continue
-        # Final fallback — empty list; differ won't complain.
-        if last_error:
-            print(f"  [lmsys] all CSV mirrors failed: {last_error}")
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _fetch_entries(self) -> list[dict]:
+        """Fetch the RSC payload and return entries list for the target leaderboard."""
+        try:
+            resp = fetch_static(RSC_URL, timeout=30, headers=RSC_HEADERS)
+            body = resp.html
+        except Exception as e:
+            print(f"  [lmsys] fetch failed: {e}")
+            return []
+
+        leaderboards = _extract_leaderboards(body)
+        if not leaderboards:
+            print("  [lmsys] could not extract leaderboards from RSC payload")
+            return []
+
+        for lb in leaderboards:
+            if lb.get("arenaSlug") == ARENA_SLUG and lb.get("leaderboardSlug") == LEADERBOARD_SLUG:
+                entries = lb.get("entries", [])
+                print(f"  [lmsys] found {len(entries)} raw entries in {ARENA_SLUG}/{LEADERBOARD_SLUG}")
+                return entries
+
+        slugs = [(lb.get("arenaSlug"), lb.get("leaderboardSlug")) for lb in leaderboards]
+        print(f"  [lmsys] leaderboard {ARENA_SLUG}/{LEADERBOARD_SLUG} not found; available: {slugs}")
         return []
+
+
+# ---------------------------------------------------------------------------
+# RSC payload parser
+# ---------------------------------------------------------------------------
+
+_MARKER = '"leaderboards":[{"arenaSlug"'
+
+
+def _extract_leaderboards(body: str) -> list[dict]:
+    """
+    Locate the ``"leaderboards":[...]`` JSON inside the RSC text stream and
+    return the parsed Python list.  Returns [] on any parse failure.
+    """
+    idx = body.find(_MARKER)
+    if idx < 0:
+        return []
+
+    # Skip to the '[' character that opens the array.
+    arr_start = body.index(":[{", idx) + 1
+    arr_text = _extract_json_array(body, arr_start)
+    if not arr_text:
+        return []
+
+    try:
+        return json.loads(arr_text)
+    except json.JSONDecodeError as e:
+        print(f"  [lmsys] JSON parse error: {e}")
+        return []
+
+
+def _extract_json_array(s: str, start: int) -> str | None:
+    """
+    Starting at ``s[start]`` (which must be '['), walk forward counting
+    brackets to find the matching ']' and return the complete array substring.
+    Handles nested objects, arrays, and quoted strings with escapes.
+    """
+    depth = 0
+    in_str = False
+    escape = False
+
+    for i in range(start, len(s)):
+        c = s[i]
+        if escape:
+            escape = False
+            continue
+        if c == "\\" and in_str:
+            escape = True
+            continue
+        if c == '"':
+            in_str = not in_str
+            continue
+        if in_str:
+            continue
+        if c == "[":
+            depth += 1
+        elif c == "]":
+            depth -= 1
+            if depth == 0:
+                return s[start : i + 1]
+
+    return None  # unbalanced
