@@ -13,6 +13,14 @@ type MetricRow = {
   render: (m: ModelOverview) => React.ReactNode;
 };
 
+const ELO_SUBS = [
+  { key: "arena_elo_coding" as const, label: "↳ Coding"  },
+  { key: "arena_elo_math"   as const, label: "↳ Math"    },
+  { key: "arena_elo_hard"   as const, label: "↳ Hard"    },
+  { key: "arena_elo_vision" as const, label: "↳ Vision"  },
+  { key: "arena_elo_if"     as const, label: "↳ Instr."  },
+];
+
 const METRICS: MetricRow[] = [
   { label: "Vendor",         render: (m) => <>{countryFlag(m.vendor_country)} {m.vendor_name}</> },
   { label: "Input $/Mtok",   render: (m) => <span className="font-mono">{fmtPrice(m.input_per_mtok)}</span> },
@@ -35,9 +43,10 @@ export function CompareClient({
   models: ModelOverview[];
   defaultModelId: string | null;
 }) {
-  const [selected, setSelected] = useState<string[]>(defaultModelId ? [defaultModelId] : []);
-  const [searchQ, setSearchQ]   = useState("");
-  const [open, setOpen]         = useState(false);
+  const [selected, setSelected]   = useState<string[]>(defaultModelId ? [defaultModelId] : []);
+  const [searchQ, setSearchQ]     = useState("");
+  const [open, setOpen]           = useState(false);
+  const [eloExpanded, setEloExpanded] = useState(false);
   const inputRef                = useRef<HTMLInputElement>(null);
   const dropdownRef             = useRef<HTMLDivElement>(null);
 
@@ -157,16 +166,41 @@ export function CompareClient({
             </thead>
             <tbody>
               {METRICS.map((row) => (
-                <tr key={row.label} className="border-t border-paper-line dark:border-ink-line">
-                  <td className="px-4 py-2.5 text-xs uppercase tracking-wider text-ink-muted font-mono whitespace-nowrap">
-                    {row.label}
-                  </td>
-                  {selectedModels.map((m) => (
-                    <td key={m.id} className="px-4 py-2.5">
-                      {row.render(m)}
+                <>
+                  <tr key={row.label} className="border-t border-paper-line dark:border-ink-line">
+                    <td className="px-4 py-2.5 text-xs uppercase tracking-wider text-ink-muted font-mono whitespace-nowrap">
+                      {row.label === "Arena ELO" ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          Arena ELO
+                          <button
+                            onClick={() => setEloExpanded(e => !e)}
+                            className="text-[10px] text-ink-muted hover:text-accent border border-current rounded px-0.5 leading-tight"
+                            title={eloExpanded ? "Collapse" : "Expand sub-categories"}
+                          >
+                            {eloExpanded ? "◂" : "▸"}
+                          </button>
+                        </span>
+                      ) : row.label}
                     </td>
+                    {selectedModels.map((m) => (
+                      <td key={m.id} className="px-4 py-2.5">
+                        {row.render(m)}
+                      </td>
+                    ))}
+                  </tr>
+                  {row.label === "Arena ELO" && eloExpanded && ELO_SUBS.map((sub) => (
+                    <tr key={sub.key} className="border-t border-paper-line/50 dark:border-ink-line/50 bg-paper-panel/40 dark:bg-ink-soft/20">
+                      <td className="px-4 py-2 text-xs text-ink-muted font-mono whitespace-nowrap pl-6">
+                        {sub.label}
+                      </td>
+                      {selectedModels.map((m) => (
+                        <td key={m.id} className="px-4 py-2 font-mono text-sm text-ink-muted">
+                          {fmtElo(m[sub.key])}
+                        </td>
+                      ))}
+                    </tr>
                   ))}
-                </tr>
+                </>
               ))}
             </tbody>
           </table>

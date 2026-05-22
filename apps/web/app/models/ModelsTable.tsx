@@ -10,6 +10,14 @@ type SortKey =
   | "name" | "vendor_name" | "release_date" | "context_window"
   | "input_per_mtok" | "output_per_mtok" | "arena_elo" | "parameters_b";
 
+const ELO_SUBS = [
+  { key: "arena_elo_coding" as const, label: "Coding" },
+  { key: "arena_elo_math"   as const, label: "Math"   },
+  { key: "arena_elo_hard"   as const, label: "Hard"   },
+  { key: "arena_elo_vision" as const, label: "Vision" },
+  { key: "arena_elo_if"     as const, label: "IF"     },
+];
+
 type WeightFilter = "all" | "open" | "closed";
 
 export function ModelsTable({ models }: { models: ModelOverview[] }) {
@@ -18,6 +26,7 @@ export function ModelsTable({ models }: { models: ModelOverview[] }) {
   const [weight, setWeight]         = useState<WeightFilter>("all");
   const [sortKey, setSortKey]       = useState<SortKey>("arena_elo");
   const [sortDir, setSortDir]       = useState<"asc" | "desc">("desc");
+  const [eloExpanded, setEloExpanded] = useState(false);
 
   // Derive vendor list from data, keeping display order consistent
   const vendors = useMemo(() => {
@@ -138,7 +147,13 @@ export function ModelsTable({ models }: { models: ModelOverview[] }) {
               <Th onClick={() => toggleSort("input_per_mtok")} active={sortKey === "input_per_mtok"} dir={sortDir} num>In $/Mtok</Th>
               <Th onClick={() => toggleSort("output_per_mtok")} active={sortKey === "output_per_mtok"} dir={sortDir} num>Out $/Mtok</Th>
               <Th onClick={() => toggleSort("context_window")} active={sortKey === "context_window"} dir={sortDir} num>Context</Th>
-              <Th onClick={() => toggleSort("arena_elo")} active={sortKey === "arena_elo"} dir={sortDir} num>Arena ELO</Th>
+              <Th onClick={() => toggleSort("arena_elo")} active={sortKey === "arena_elo"} dir={sortDir} num
+                expand={{ expanded: eloExpanded, onToggle: () => setEloExpanded(e => !e) }}>
+                Arena ELO
+              </Th>
+              {eloExpanded && ELO_SUBS.map(s => (
+                <Th key={s.key} num>{s.label}</Th>
+              ))}
               <Th onClick={() => toggleSort("parameters_b")} active={sortKey === "parameters_b"} dir={sortDir} num>Params</Th>
               <Th>License</Th>
             </tr>
@@ -167,6 +182,9 @@ export function ModelsTable({ models }: { models: ModelOverview[] }) {
                 <td className="px-3 py-2 text-right font-mono">{fmtPrice(m.output_per_mtok)}</td>
                 <td className="px-3 py-2 text-right font-mono">{fmtTokens(m.context_window)}</td>
                 <td className="px-3 py-2 text-right font-mono">{fmtElo(m.arena_elo)}</td>
+                {eloExpanded && ELO_SUBS.map(s => (
+                  <td key={s.key} className="px-3 py-2 text-right font-mono text-ink-muted">{fmtElo(m[s.key])}</td>
+                ))}
                 <td className="px-3 py-2 text-right font-mono text-ink-muted">
                   {m.parameters_b != null ? `${m.parameters_b}B` : "—"}
                 </td>
@@ -181,7 +199,7 @@ export function ModelsTable({ models }: { models: ModelOverview[] }) {
             ))}
             {sorted.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-3 py-10 text-center text-ink-muted">No models match.</td>
+                <td colSpan={8 + (eloExpanded ? ELO_SUBS.length : 0)} className="px-3 py-10 text-center text-ink-muted">No models match.</td>
               </tr>
             )}
           </tbody>
@@ -226,13 +244,14 @@ function Chip({
 }
 
 function Th({
-  children, onClick, active, dir, num,
+  children, onClick, active, dir, num, expand,
 }: {
   children: React.ReactNode;
   onClick?: () => void;
   active?: boolean;
   dir?: "asc" | "desc";
   num?: boolean;
+  expand?: { expanded: boolean; onToggle: () => void };
 }) {
   return (
     <th
@@ -244,8 +263,19 @@ function Th({
         active ? "text-ink" : "",
       ].join(" ")}
     >
-      {children}
-      {active && <span className="ml-1">{dir === "asc" ? "↑" : "↓"}</span>}
+      <span className="inline-flex items-center gap-1">
+        {children}
+        {active && <span>{dir === "asc" ? "↑" : "↓"}</span>}
+        {expand && (
+          <button
+            onClick={(e) => { e.stopPropagation(); expand.onToggle(); }}
+            className="text-[10px] text-ink-muted hover:text-accent border border-current rounded px-0.5 leading-tight"
+            title={expand.expanded ? "Collapse sub-categories" : "Expand sub-categories"}
+          >
+            {expand.expanded ? "◂" : "▸"}
+          </button>
+        )}
+      </span>
     </th>
   );
 }
