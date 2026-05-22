@@ -1,57 +1,45 @@
 # Contributing
 
-Thanks for considering a contribution.
+## 分支命名
 
-## Quick start
-
-See [README.md](README.md) for local setup. TL;DR:
-
-```bash
-# Frontend
-cd apps/web && npm install && npm run dev
-
-# Scrapers
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r scrapers/requirements.txt
-playwright install chromium
-python -m scrapers.run --dry-run
+```
+feat/short-description     # 新功能
+fix/what-is-broken         # bug 修复
+data/vendor-or-model-name  # catalog / 价格 / benchmark 数据更新
+chore/what-is-changed      # 依赖、配置、CI
 ```
 
-## Adding a new vendor
+示例：`feat/compare-page`、`fix/lmsys-rsc-parse`、`data/add-grok-5`
 
-1. Create `scrapers/vendors/your_vendor.py` extending `CatalogVendorScraper`
-   (see `scrapers/vendors/_catalog_scraper.py`).
-2. Add a row to `supabase/seed.sql` so the vendor is known.
-3. If the vendor has Arena / Artificial Analysis / academic benchmark scores,
-   add name → model_id mappings in `scrapers/benchmarks/_mapping.py`.
-4. Run `python -m scrapers.run --dry-run --vendor your_vendor` to validate.
+## 工作流
 
-## Updating prices
+```bash
+# 1. 从最新 main 开分支
+git checkout main && git pull
+git checkout -b feat/my-feature
 
-Prices are append-only history. The scraper writes a new row in `prices` only
-when the value changes from the latest snapshot — that way the price chart
-stays readable.
+# 2. 改代码，commit
+git add -p   # 或 git add <files>
+git commit -m "feat: describe what you did"
 
-If a vendor changes their pricing page structure and the LLM fallback fails,
-update the `fallback_prices` dict in that vendor's file.
+# 3. 推到 remote，开 PR
+git push -u origin feat/my-feature
+gh pr create --fill   # 填 PR 模板后提交
 
-## Benchmark scores
+# 4. 自己 merge（0 required reviewers，直接 squash merge）
+gh pr merge --squash --delete-branch
+```
 
-Academic scores (MMLU / GPQA / HumanEval / SWE-bench / MATH) come from
-official vendor announcements. We curate them by hand in
-`scrapers/benchmarks/academic.py`. PRs welcome — please link the official
-source (vendor blog, paper, system card) in the commit message.
+## Commit message 格式
 
-LMSYS Arena and Artificial Analysis are scraped automatically.
+```
+<type>: <short description>
 
-## PR guidelines
+type: feat | fix | data | chore | docs | refactor
+```
 
-- One vendor / one benchmark / one feature per PR keeps reviews fast.
-- Run `npm run type-check` in `apps/web/` before pushing frontend changes.
-- For scraper changes, attach the output of `python -m scrapers.run --dry-run --vendor X`.
+## 注意
 
-## Data ethics
-
-- Don't increase scrape frequency without a good reason — daily is enough.
-- Always credit the source in `source_url` on every price / benchmark row.
-- Don't use this tool to bulk-mirror vendor docs.
+- 禁止直接 push 到 `main`（ruleset 已启用，会被拒绝）
+- TypeScript 必须零错误（`cd apps/web && npx tsc --noEmit`）
+- Python 改动涉及 scraper 的，dry-run 跑一遍再 PR
