@@ -42,12 +42,10 @@ RSC_HEADERS = {
 
 # (arenaSlug, leaderboardSlug) → benchmark_name stored in DB
 LEADERBOARDS: list[tuple[str, str, str]] = [
-    ("text",   "overall",               "arena-elo"),
-    ("text",   "coding",                "arena-elo-coding"),
-    ("text",   "math",                  "arena-elo-math"),
-    ("text",   "hard-prompts",          "arena-elo-hard"),
-    ("vision", "overall",               "arena-elo-vision"),
-    ("text",   "instruction-following", "arena-elo-if"),
+    ("text",   "overall", "arena-elo"),
+    ("code",   "overall", "arena-elo-coding"),   # arena.ai restructured: coding is now a top-level category
+    ("vision", "overall", "arena-elo-vision"),
+    # math / hard-prompts / instruction-following no longer exist as separate leaderboards on arena.ai
 ]
 
 

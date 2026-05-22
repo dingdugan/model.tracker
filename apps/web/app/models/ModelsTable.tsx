@@ -12,10 +12,7 @@ type SortKey =
 
 const ELO_SUBS = [
   { key: "arena_elo_coding" as const, label: "Coding" },
-  { key: "arena_elo_math"   as const, label: "Math"   },
-  { key: "arena_elo_hard"   as const, label: "Hard"   },
   { key: "arena_elo_vision" as const, label: "Vision" },
-  { key: "arena_elo_if"     as const, label: "IF"     },
 ];
 
 type WeightFilter = "all" | "open" | "closed";
