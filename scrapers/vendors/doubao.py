@@ -13,10 +13,12 @@ class DoubaoScraper(CatalogVendorScraper):
 
     catalog = [
         ModelRecord(vendor_id="doubao", slug="doubao-1-5-pro-256k", name="Doubao 1.5 Pro 256k", family="doubao",
+                    aliases=["Doubao 1.5 Pro"],  # unqualified name on leaderboards → the 256k variant
                     context_window=256_000, modalities=["text"]),
         ModelRecord(vendor_id="doubao", slug="doubao-1-5-pro-32k", name="Doubao 1.5 Pro 32k", family="doubao",
                     context_window=32_000, modalities=["text"]),
         ModelRecord(vendor_id="doubao", slug="doubao-1-5-lite-32k", name="Doubao 1.5 Lite 32k", family="doubao",
+                    aliases=["Doubao 1.5 Lite"],
                     context_window=32_000, modalities=["text"]),
         ModelRecord(vendor_id="doubao", slug="doubao-1-5-thinking-pro", name="Doubao 1.5 Thinking Pro",
                     family="doubao", context_window=128_000, modalities=["text"],

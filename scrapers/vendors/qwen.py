@@ -16,6 +16,7 @@ class QwenScraper(CatalogVendorScraper):
                     context_window=262_144, modalities=["text"],
                     description="Alibaba's flagship Qwen3 model."),
         ModelRecord(vendor_id="qwen", slug="qwen3-235b-a22b", name="Qwen3 235B A22B", family="qwen",
+                    aliases=["Qwen3 235B"],
                     context_window=131_072, modalities=["text"], is_open_weight=True,
                     license="apache-2.0",
                     parameters_b=235.0),

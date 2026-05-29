@@ -17,6 +17,7 @@ class CohereScraper(CatalogVendorScraper):
         ModelRecord(vendor_id="cohere", slug="command-r-plus", name="Command R+", family="command",
                     context_window=128_000, modalities=["text"], parameters_b=104.0),
         ModelRecord(vendor_id="cohere", slug="command-r-08-2024", name="Command R 08-2024", family="command",
+                    aliases=["Command R"],
                     context_window=128_000, modalities=["text"], parameters_b=35.0),
         ModelRecord(vendor_id="cohere", slug="command-r7b", name="Command R7B", family="command",
                     context_window=128_000, modalities=["text"], parameters_b=7.0),

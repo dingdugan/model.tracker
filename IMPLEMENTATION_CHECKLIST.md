@@ -176,3 +176,54 @@
   证据: commit `b13cbb9` "fix(scrapers): forbid LLM fallback from creating new model rows"，推到 origin/main
 - [x] 重跑 workflow 验证修复在生产环境工作
   证据: workflow run 26266816080 在 4m52s 内 ✓ 完成；本会话 SQL 验证 `models_new_from_run=0`、`errors_from_run=0`、`snapshot.new_models=[]`、price_changes=6 全是真实价格差（2 model × 3 field）
+
+---
+
+# 健壮性大修（Robustness Overhaul）
+
+目标：(1) 永不漏掉新信息（尤其新模型发布），(2) 信息归属永不错配（A 模型的价格不会出现在 B 模型上）。
+核心思路：**"匹配不上"的名字既是错配风险源、也是新模型发现信号——拒绝猜测的那一刻不丢弃，而登记成待办。**
+
+## Phase A — 统一身份注册表 + 废子串匹配 + CI 闸（地基）✅
+
+- [x] `ModelRecord` 加 `aliases: list[str]` 字段（benchmark/外部名）
+  证据: `scrapers/core/schema.py` ModelRecord 含 `aliases: list[str] = Field(default_factory=list)`
+- [x] 新建 `core/model_registry.py`：从所有 vendor catalog 派生 `归一化别名 → canonical_id`，提供 `resolve(name) -> id | None`（归一化**精确**匹配，无子串）
+  证据: `scrapers/core/model_registry.py` — `canon()` / `resolve()` / `all_aliases()` / `AliasCollision`；本会话验证 `resolve("Claude Opus 4.8")=anthropic/claude-opus-4-8`、`resolve("totally-unknown")=None`
+- [x] 把 `_mapping.py` 的全部别名迁进各 vendor catalog 的 `aliases=[...]`，`resolve_model_id` 改为委托 `model_registry.resolve`
+  证据: `_mapping.py` 仅剩委托 `_resolve`（无 `NAME_TO_MODEL_ID`，grep 0 命中）；只需补 4 个 alias（cohere command-r / doubao 1.5 pro+lite / qwen3-235b），其余旧 key canon 后与 slug/name 等价；**105 个旧 mapping key 零回归**（脚本对比 HEAD 版本）
+- [x] `vendors/_helpers.py` 价格匹配改用注册表（slug + name + aliases），仍 fail-closed
+  证据: `_helpers.py` lookup 循环加入 `*getattr(m,"aliases",[])`，共享 `model_registry.canon`；删除本地 `_canon` 和未用的 `import re`
+- [x] 新增 `tests/test_registry.py` + 接入 CI
+  证据: `scrapers/tests/test_registry.py` 6 个测试全过（round-trip / 无碰撞 / 碰撞自检会 fire / 精确非子串 / 已知 benchmark 名锚点）；`.github/workflows/test.yml` 在 push+PR 跑 pytest；`requirements.txt` 加 `pytest>=8.0.0`
+- [x] 子串匹配错抓回归测试：`resolve("gpt-5-codex")` 返回 `None`
+  证据: `test_matching_is_exact_not_substring` 断言 gpt-5-codex / claude-opus-4-8-thinking 等返回 None，通过
+
+## Phase B — 发现层（解决"不漏新模型"，最要紧）
+
+- [ ] 新建 `discovery_candidates` + `unresolved_observations` 表（migration）
+  完成标准: 两表存在；含 name/source/first_seen/raw_context/status 字段
+- [ ] 发现信号①：厂商官方 Models API（先接 Anthropic `/v1/models`、OpenAI `/v1/models`）→ 未在注册表的模型 ID 写入候选
+  完成标准: 跑一次能把 API 返回里注册表没有的 ID 写进 `discovery_candidates`
+- [ ] 发现信号②：benchmark 榜单里 `resolve()` 返回 None 的名字 → 写入 `unresolved_observations` 并升格为发现候选
+  完成标准: lmsys/AA scraper 把未解析名落库而非静默丢
+- [ ] 候选报警：当日 snapshot 加「🆕 未收录模型」段 + 开 GitHub issue
+  完成标准: 有新候选时 changelog 出现该段；workflow 失败/发现时开 issue
+- [ ] 发现层**绝不写 `models` 表**——仅提案，人工/高可信规则晋升
+  完成标准: 代码审查确认无 discovery → models 写路径
+
+## Phase C — 校验/异常闸（精确性 + 防脏值）
+
+- [ ] `pending_changes` 隔离表（migration）
+- [ ] 价格异常闸：变动 > X% 或超出注册表 `expected_price_range` → 隔离 + 报警，不自动覆盖
+  完成标准: 构造一个 3x 跳变价 → 进 `pending_changes`，不进 `prices`
+- [ ] ELO 异常闸：单次跳动 > ±N 分 → 隔离 + 报警
+- [ ] 结构漂移检测：每个 benchmark 记录上次解析条数，本次 0 或骤降 → 报警（命中 arena `text/coding`→`code/overall` 那类）
+  完成标准: 模拟某 leaderboard 返回 0 行 → 报警；现有 lmsys 正常不报
+
+## Phase D — 可观测性 + 多路发现加固
+
+- [ ] 每日数据健康摘要（N 模型 / X 新候选 / Y 未解析 / Z 隔离 / W 超 30 天 stale 价）
+- [ ] 发现信号③④：厂商模型/文档页 + 博客/changelog RSS
+- [ ] 站点「数据健康」页：候选、未解析名、隔离值、stale 价可视化
+- [ ] `scrape_errors` 接出到摘要/页面
