@@ -18,13 +18,15 @@ model is unreachable or two models share a name.
 
 from __future__ import annotations
 
-from ..core.model_registry import resolve as _resolve
+from ..core.model_registry import resolve_benchmark as _resolve_benchmark
 
 
 def resolve_model_id(reported_name: str) -> str | None:
     """Find a canonical model_id for a benchmark-reported model name, or None.
 
-    None means "no confident match" — the caller must log it as an unresolved
-    observation (a discovery candidate), never fall back to a guess.
+    Uses benchmark resolution: exact match, then exact match on the
+    qualifier-stripped base (so ``claude-opus-4-7-thinking`` and dated snapshots
+    attach to the base model). None means "no confident match" — the caller logs
+    it as a discovery candidate, never a guess.
     """
-    return _resolve(reported_name)
+    return _resolve_benchmark(reported_name)

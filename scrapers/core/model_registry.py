@@ -100,6 +100,67 @@ def resolve(name: str) -> str | None:
     return _alias_map().get(canon(name))
 
 
+# Trailing tokens that denote a *mode/snapshot* of a model, not a different
+# model: thinking mode, instruction-tuned, dated snapshots, previews. Stripping
+# these lets a leaderboard's "claude-opus-4-7-thinking" or
+# "gemma-3-27b-it" resolve to the base model we track.
+#
+# CRITICAL: this list must NEVER contain identity-bearing tokens (sizes like
+# 8b/32b/mini/lite/pro/flash/nano/air/turbo, or version numbers). Stripping one
+# of those would map model A onto model B — the exact misattribution we forbid.
+# Because the base must still EXACTLY match a catalog entry (and catalog aliases
+# are collision-checked), a strip can only ever land on the genuine base model.
+_VARIANT_SUFFIXES = [
+    r"\s*\([^)]*\)\s*$",            # trailing "(thinking-minimal)" etc.
+    r"[-@\s]\d{4}-\d{2}-\d{2}$",    # ISO date  -2025-04-14
+    r"[-@\s]\d{6,8}$",              # compact snapshot  -20251101
+    r"[-\s]\d{1,2}-\d{4}$",         # MM-YYYY  -09-2025
+    # no-/non-thinking must precede the bare 'thinking' rule, else the latter
+    # strips '-thinking' out of '-no-thinking' and leaves a dangling '-no'.
+    r"[-\s]no[-\s]?thinking$",
+    r"[-\s]non[-\s]?thinking$",
+    r"[-\s]thinking(?:[-\s]\d+k)?$",
+    r"[-\s]it$",                    # instruction-tuned
+    r"[-\s]latest$",
+    r"[-\s]preview$",
+    r"[-\s]exp$",
+    r"[-\s]beta$",
+    r"[-\s]terminus$",
+]
+_VARIANT_RE = [re.compile(p, re.IGNORECASE) for p in _VARIANT_SUFFIXES]
+
+
+def base_form(name: str) -> str:
+    """Strip trailing mode/snapshot qualifiers to reach the base model name."""
+    cur = (name or "").strip()
+    prev = None
+    while cur != prev:
+        prev = cur
+        for rx in _VARIANT_RE:
+            cur = rx.sub("", cur).strip()
+        cur = cur.strip("-@ ")
+    return cur
+
+
+def resolve_benchmark(name: str) -> str | None:
+    """Resolve a benchmark/leaderboard model name to a canonical id.
+
+    Exact match first; if that fails, strip mode/snapshot qualifiers and exact-
+    match the base. Used by benchmark scrapers so that variant rows
+    (``-thinking``, ``-it``, dated snapshots) attach to the base model we track,
+    while still never guessing — the stripped base must itself exactly resolve.
+    """
+    if not name:
+        return None
+    hit = _alias_map().get(canon(name))
+    if hit is not None:
+        return hit
+    base = base_form(name)
+    if base and base != name:
+        return _alias_map().get(canon(base))
+    return None
+
+
 def all_aliases() -> dict[str, str]:
     """Full ``canon(alias) -> id`` map (copy). For tests / introspection."""
     return dict(_alias_map())

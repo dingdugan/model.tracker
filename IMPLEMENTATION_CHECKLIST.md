@@ -215,6 +215,8 @@
   证据: `run.py` 把 fresh_candidates 写进 snapshot payload；`scrapers/alert_candidates.py` 输出 markdown；`scrape-daily.yml` 新增 "Collect discovery candidates" + "Open/update discovery issue"（复用同一 labeled issue，不每天新开）
 - [x] 发现层**绝不写 `models` 表**——仅提案
   证据: discovery 路径只调用 `db.upsert_candidate`（写 `discovery_candidates`），run.py 中 discovery 分支无任何 `upsert_model` 调用；`run.py --skip-discovery` 可关
+- [x] **修复 Phase A 回归（由 Phase B fail-loud 抓出）**：精确匹配把 arena 的 `-thinking`/`-it`/带日期变体也卡掉了，arena-elo 32→15。加 `model_registry.base_form()` + `resolve_benchmark()`（精确→剥离受控的"模式/快照"后缀再精确；**绝不剥 size/version 等身份 token**，故不会错配），benchmark scraper 改用之。候选按 `infer_vendor()` 分级（track 厂商=高信号 vs 其他=折叠摘要），`alert_candidates.py` 据此分区
+  证据: `tests/test_discovery.py` 新增 mode-variant 恢复、身份 token 不剥离、untracked 仍未知、infer_vendor 共 15 测全过；arena 计数恢复待重跑 workflow 验证
 
 ## Phase C — 校验/异常闸（精确性 + 防脏值）
 
