@@ -14,6 +14,7 @@ export type ModelOverview = {
   parameters_b: number | null;
   license: string | null;
   status: "active" | "preview" | "deprecated" | "retired";
+  auto_discovered: boolean;
   announcement_url: string | null;
   description: string | null;
   input_per_mtok: number | null;

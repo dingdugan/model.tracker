@@ -45,6 +45,17 @@ export async function getRecentIssues(limit = 30): Promise<ScrapeIssueRow[]> {
   return (data ?? []) as ScrapeIssueRow[];
 }
 
+export async function getAutoDiscovered(): Promise<ModelOverview[]> {
+  const { data, error } = await supabase
+    .from("models_overview")
+    .select("*")
+    .eq("auto_discovered", true)
+    .neq("status", "retired")
+    .order("first_seen", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as ModelOverview[];
+}
+
 export async function getStalePrices(days = 30): Promise<StalePrice[]> {
   const cutoff = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
   const { data, error } = await supabase

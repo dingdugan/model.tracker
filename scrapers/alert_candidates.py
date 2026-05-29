@@ -1,7 +1,14 @@
-"""Print open discovery candidates as Markdown (for the daily GitHub-issue alert).
+"""Emit the daily data-health alert as Markdown (for a GitHub issue).
 
-Run after the scrape. Emits nothing when there are no candidates awaiting review,
-so the workflow only opens/updates an issue when there's something to act on.
+Only **quarantined values** are alerted here — a scraped value looked wrong and
+we're holding the last-known-good one. These need a human eye.
+
+Unrecognized *models* are deliberately NOT alerted: new models from vendor APIs
+are auto-promoted (no action needed), and noisy leaderboard names live on the
+/health page for optional review — we don't nag about them.
+
+Emits nothing when there's nothing to act on, so the workflow only opens/updates
+an issue when it matters.
 
 Usage: python -m scrapers.alert_candidates
 """
@@ -20,98 +27,26 @@ def main() -> int:
     try:
         db = Database()
     except Exception as e:
-        print(f"<!-- alert_candidates: cannot connect: {e} -->", file=sys.stderr)
+        print(f"<!-- data-health alert: cannot connect: {e} -->", file=sys.stderr)
         return 0
 
-    rows = db.open_candidates()
     pending = db.open_pending()
-    if not rows and not pending:
+    if not pending:
         return 0  # silence = nothing to review
 
-    lines: list[str] = []
-
-    # Quarantined values first — these are higher urgency (a value looked wrong
-    # and we're holding the last-good one live until it's confirmed/reviewed).
-    if pending:
-        lines.append("## ⚠️ Quarantined values (held — not applied)")
-        lines.append(
-            "_A scraped value looked anomalous; the last-known-good value is still "
-            "live. It auto-applies if it persists, or set the row `status` in "
-            "`pending_changes` to `applied`/`rejected`._"
-        )
-        for p in pending:
-            lines.append(
-                f"- **{p.get('model_id')}** `{p.get('field')}`: "
-                f"{p.get('prior_value')} → {p.get('proposed_value')} "
-                f"— {p.get('reason')} (held {p.get('occurrences', 1)}×)"
-            )
-        lines.append("")
-
-    if not rows:
-        print("\n".join(lines))
-        return 0
-
-    # High signal: a vendor we already track shipped something we don't have a
-    # row for. Low signal: a model from a vendor we don't cover at all.
-    tracked: dict[str, list[dict]] = {}
-    untracked: list[dict] = []
-    for r in rows:
-        vg = r.get("vendor_guess")
-        if vg:
-            tracked.setdefault(vg, []).append(r)
-        else:
-            untracked.append(r)
-
-    lines += [
-        "## 🆕 Unrecognized models (not in the catalog)",
-        "The discovery layer found model names we may be failing to track. To adopt "
-        "one, add it to its vendor catalog in `scrapers/vendors/<vendor>.py` (with "
-        "any benchmark aliases); it then drops off this list automatically. To "
-        "ignore one, mark its row `status='dismissed'` in `discovery_candidates`.",
-        "",
-        f"**{sum(len(v) for v in tracked.values())}** from vendors we track · "
-        f"**{len(untracked)}** from other/unknown vendors.",
+    lines = [
+        "## ⚠️ Quarantined values (held — not applied)",
+        "A scraped value looked anomalous, so the last-known-good value is still "
+        "live. Each auto-applies if it persists across runs, or set the row's "
+        "`status` in `pending_changes` to `applied` / `rejected`.",
         "",
     ]
-
-    if tracked:
-        PER_VENDOR = 10  # cap benchmark variants per vendor so the issue stays readable
-        lines.append("## ⭐ From vendors we track (likely should add)")
-        for vendor in sorted(tracked):
-            rows_v = tracked[vendor]
-            # vendor-API sightings are authoritative ("the vendor serves this") →
-            # always shown in full; benchmark sightings are a noisier firehose → capped.
-            api = sorted(
-                (r for r in rows_v if str(r.get("source", "")).startswith("vendor-api")),
-                key=lambda x: x.get("reported_name", ""),
-            )
-            bench = sorted(
-                (r for r in rows_v if not str(r.get("source", "")).startswith("vendor-api")),
-                key=lambda x: x.get("reported_name", ""),
-            )
-            lines.append(f"### {vendor}  ({len(rows_v)})")
-            for r in api:
-                lines.append(f"- **{r.get('reported_name')}**  (`{r.get('source')}`) 🔑")
-            for r in bench[:PER_VENDOR]:
-                occ = r.get("occurrences", 1)
-                lines.append(f"- {r.get('reported_name')}  (`{r.get('source')}`, seen {occ}×)")
-            if len(bench) > PER_VENDOR:
-                lines.append(f"- … and {len(bench) - PER_VENDOR} more leaderboard variants")
-            lines.append("")
-
-    if untracked:
-        SAMPLE = 25
-        lines.append("## Other / untracked-vendor models")
+    for p in pending:
         lines.append(
-            f"_{len(untracked)} names from vendors we don't currently cover "
-            f"(showing first {min(SAMPLE, len(untracked))}). Full list in the "
-            f"`discovery_candidates` table._"
+            f"- **{p.get('model_id')}** `{p.get('field')}`: "
+            f"{p.get('prior_value')} → {p.get('proposed_value')} "
+            f"— {p.get('reason')} (held {p.get('occurrences', 1)}×)"
         )
-        for r in sorted(untracked, key=lambda x: x.get("reported_name", ""))[:SAMPLE]:
-            lines.append(f"- {r.get('reported_name')}  (`{r.get('source')}`)")
-        if len(untracked) > SAMPLE:
-            lines.append(f"- … and {len(untracked) - SAMPLE} more")
-        lines.append("")
 
     print("\n".join(lines))
     return 0

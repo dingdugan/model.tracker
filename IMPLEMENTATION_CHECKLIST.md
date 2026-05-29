@@ -240,4 +240,22 @@
 - [x] `scrape_errors` 脱敏接出
   证据: `supabase/migrations/0006_data_health_views.sql` 建 `recent_scrape_issues` 视图（只暴露 stage/vendor/benchmark/error_class/occurred_at，**不含** message/traceback/url）+ grant anon；`/health` 展示
 - [~] 发现信号③④：厂商模型/文档页 + 博客/changelog RSS
-  **提议 defer（待用户确认）**：信号①（vendor Models API）已权威覆盖"tracked 厂商的新发布"这个核心目标，③④（解析各家模型页/RSS）是冗余且脆弱的抓取面，价值/成本比低。建议留作 follow-up，不阻塞健壮性大修收尾。
+  **已 defer（用户确认）**：信号①（vendor Models API）已权威覆盖核心目标，③④冗余且脆弱，留作 follow-up。
+
+## Phase E — 官方 API 自动晋升（用户决定：不要人肉审批闸门）✅
+
+> **设计反转（用户拍板）**：用户明确不要"每个模型都得点头"的产品。据此把"只提案"改为**按信号可信度分层**：厂商官方 Models API = 权威（不可能幻觉/串味）→ **自动入库**；arena/AA 榜单名 = 噪声 → 永不自动收、也不骚扰。catalog 从"唯一真相源"变为"catalog（人工精修）∪ DB 自动发现（API 来源）"。
+
+- [x] `models.auto_discovered` 列 + `models_overview` 重建暴露该字段（migration 0007）
+  证据: `supabase/migrations/0007_auto_discovered.sql`；MCP apply 成功
+- [x] 注册表运行时扩展：`model_registry.register_extra()`（catalog ∪ 运行时注入的 auto 模型，catalog 永远优先）
+  证据: `core/model_registry.py` 加 `_extra` + `register_extra` + `resolve`/`resolve_benchmark`/`reset_cache` 纳入；`tests/test_promotion.py` 验证可解析 + 不覆盖 catalog
+- [x] 自动晋升逻辑（纯、可测）：仅 `vendor-api:*` 可信源；`derive_model` 用 base_form 取规范 slug、dated id 留作 alias；元数据稀疏、绝不编造
+  证据: `core/promotion.py` `is_trusted`/`derive_model`；`tests/test_promotion.py` 7 测（拒榜单源、拒未知厂商、dated→base+alias）
+- [x] `run.py` 重排：注册已有 auto → 跑发现源 → 可信候选 `upsert_auto_model`（幂等、不覆盖人工行）+ 注册 → 再跑 scraper（价格/benchmark 即可挂上）→ 低信任榜单名仅入表 → reconcile（已 resolve 的候选标 promoted）
+  证据: `scrapers/run.py`；`db.upsert_auto_model`/`auto_discovered_models`/`mark_candidates_resolved_promoted`；`_helpers` 价格匹配纳入注册表 auto 模型（仅同厂商，不跨厂商）
+- [x] 不再骚扰：alert issue 改为**仅隔离值**（Phase C），榜单候选只在 /health 可选查看；workflow issue 改名 data-health
+  证据: `alert_candidates.py` 只输出 quarantined；`.github/workflows/scrape-daily.yml` 步骤/标题/label 改为 data-health
+- [x] 前端：homepage 加 `auto` 徽章、/health 加「Auto-discovered」段 + stat
+  证据: `ModelsTable.tsx` auto badge；`health/page.tsx` 新段 + `getAutoDiscovered`；`ModelOverview.auto_discovered`；`tsc` 0 错
+- [x] 28/28 scraper 测试通过；自动晋升活体验证待重跑 workflow

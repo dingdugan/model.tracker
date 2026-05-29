@@ -68,7 +68,15 @@ def llm_fallback_into_result(
             continue
         model_id = lookup.get(_canon(raw))
         if not model_id:
-            continue  # LLM mentioned a model not in our catalog — IGNORE.
+            # Not in this vendor's catalog — try the registry (covers
+            # auto-discovered models registered for this run), but ONLY accept a
+            # match that belongs to THIS vendor (no cross-vendor attribution).
+            from ..core.model_registry import resolve as _registry_resolve
+            cand = _registry_resolve(raw)
+            if cand and cand.startswith(f"{vendor_id}/"):
+                model_id = cand
+            else:
+                continue  # unknown model — IGNORE (fail closed).
         if model_id in seen_model_ids:
             continue  # Skip duplicate price rows in same payload
         seen_model_ids.add(model_id)

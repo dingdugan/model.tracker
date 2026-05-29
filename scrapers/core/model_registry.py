@@ -88,16 +88,43 @@ def _alias_map() -> dict[str, str]:
     return _build_alias_map()
 
 
+# Runtime-registered models (auto-discovered from vendor APIs, loaded from the DB
+# at scrape time). Kept separate from the catalog-derived map so the catalog
+# stays the pure, CI-checked source for *curated* models, while auto-discovered
+# ones extend resolution for a run. Catalog always wins on conflict.
+_extra: dict[str, str] = {}
+
+
+def register_extra(models) -> None:
+    """Merge additional models into resolution for this process.
+
+    ``models``: iterable of mappings with ``id``, ``slug``, ``name`` and optional
+    ``aliases``. Used by run.py to fold DB-stored auto-discovered models into the
+    registry so their benchmark/price rows attach. Never overrides a catalog
+    alias (curated wins).
+    """
+    catalog = _alias_map()
+    for m in models:
+        mid = m["id"]
+        names = [m.get("slug"), m.get("name"), *(m.get("aliases") or [])]
+        for raw in names:
+            key = canon(raw or "")
+            if key and key not in catalog:
+                _extra[key] = mid
+
+
 def resolve(name: str) -> str | None:
     """Return the canonical model_id for an external name, or ``None``.
 
-    Normalized-exact match against every model's slug / display name / aliases.
-    ``None`` means "no confident match" — callers must treat that as an
-    unresolved observation, never as a fallback guess.
+    Normalized-exact match against every model's slug / display name / aliases
+    (catalog first, then runtime-registered auto-discovered models). ``None``
+    means "no confident match" — callers must treat that as an unresolved
+    observation, never as a fallback guess.
     """
     if not name:
         return None
-    return _alias_map().get(canon(name))
+    key = canon(name)
+    return _alias_map().get(key) or _extra.get(key)
 
 
 # Trailing tokens that denote a *mode/snapshot* of a model, not a different
@@ -152,12 +179,12 @@ def resolve_benchmark(name: str) -> str | None:
     """
     if not name:
         return None
-    hit = _alias_map().get(canon(name))
+    hit = resolve(name)
     if hit is not None:
         return hit
     base = base_form(name)
     if base and base != name:
-        return _alias_map().get(canon(base))
+        return resolve(base)
     return None
 
 
@@ -167,5 +194,6 @@ def all_aliases() -> dict[str, str]:
 
 
 def reset_cache() -> None:
-    """Drop the memoized map. For tests that mutate catalogs."""
+    """Drop the memoized map and runtime extras. For tests that mutate catalogs."""
     _alias_map.cache_clear()
+    _extra.clear()
