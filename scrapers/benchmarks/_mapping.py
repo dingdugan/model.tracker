@@ -24,6 +24,8 @@ NAME_TO_MODEL_ID: dict[str, str] = {
     "o3":                       "openai/o3",
 
     # Anthropic
+    "claude opus 4.8":          "anthropic/claude-opus-4-8",
+    "claude-opus-4-8":          "anthropic/claude-opus-4-8",
     "claude opus 4.7":          "anthropic/claude-opus-4-7",
     "claude-opus-4-7":          "anthropic/claude-opus-4-7",
     "claude opus 4.6":          "anthropic/claude-opus-4-6",
