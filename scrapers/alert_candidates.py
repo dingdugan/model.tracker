@@ -51,15 +51,28 @@ def main() -> int:
     ]
 
     if tracked:
+        PER_VENDOR = 10  # cap benchmark variants per vendor so the issue stays readable
         lines.append("## ⭐ From vendors we track (likely should add)")
         for vendor in sorted(tracked):
-            lines.append(f"### {vendor}")
-            for r in sorted(tracked[vendor], key=lambda x: x.get("reported_name", "")):
+            rows_v = tracked[vendor]
+            # vendor-API sightings are authoritative ("the vendor serves this") →
+            # always shown in full; benchmark sightings are a noisier firehose → capped.
+            api = sorted(
+                (r for r in rows_v if str(r.get("source", "")).startswith("vendor-api")),
+                key=lambda x: x.get("reported_name", ""),
+            )
+            bench = sorted(
+                (r for r in rows_v if not str(r.get("source", "")).startswith("vendor-api")),
+                key=lambda x: x.get("reported_name", ""),
+            )
+            lines.append(f"### {vendor}  ({len(rows_v)})")
+            for r in api:
+                lines.append(f"- **{r.get('reported_name')}**  (`{r.get('source')}`) 🔑")
+            for r in bench[:PER_VENDOR]:
                 occ = r.get("occurrences", 1)
-                lines.append(
-                    f"- **{r.get('reported_name')}**  "
-                    f"(`{r.get('source')}`, seen {occ}×)"
-                )
+                lines.append(f"- {r.get('reported_name')}  (`{r.get('source')}`, seen {occ}×)")
+            if len(bench) > PER_VENDOR:
+                lines.append(f"- … and {len(bench) - PER_VENDOR} more leaderboard variants")
             lines.append("")
 
     if untracked:
