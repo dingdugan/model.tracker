@@ -1,11 +1,12 @@
 import Link from "next/link";
 import {
+  getAutoDiscovered,
   getDiscoveryCandidates,
   getPendingChanges,
   getRecentIssues,
   getStalePrices,
 } from "@/lib/queries";
-import { fmtDate, modelHref } from "@/lib/format";
+import { fmtDate, fmtPrice, modelHref } from "@/lib/format";
 import { Badge } from "@/components/Badge";
 
 export const revalidate = 1800;
@@ -16,11 +17,12 @@ export const metadata = {
 };
 
 export default async function HealthPage() {
-  const [candidates, pending, issues, stale] = await Promise.all([
+  const [candidates, pending, issues, stale, auto] = await Promise.all([
     getDiscoveryCandidates().catch(() => []),
     getPendingChanges().catch(() => []),
     getRecentIssues().catch(() => []),
     getStalePrices(30).catch(() => []),
+    getAutoDiscovered().catch(() => []),
   ]);
 
   const tracked = candidates.filter((c) => c.vendor_guess);
@@ -39,11 +41,34 @@ export default async function HealthPage() {
 
       {/* Stat row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Stat label="Discovered (unrecognized)" value={candidates.length} tone={candidates.length ? "accent" : "ok"} />
+        <Stat label="Auto-added (vendor API)" value={auto.length} tone={auto.length ? "accent" : "ok"} />
         <Stat label="Quarantined values" value={pending.length} tone={pending.length ? "warn" : "ok"} />
         <Stat label="Stale prices (>30d)" value={stale.length} tone={stale.length ? "warn" : "ok"} />
-        <Stat label="Recent scrape issues" value={issues.length} tone={issues.length ? "warn" : "ok"} />
+        <Stat label="Unrecognized names" value={candidates.length} tone={candidates.length ? "accent" : "ok"} />
       </div>
+
+      {/* Auto-discovered */}
+      <Section
+        title="Auto-discovered models"
+        subtitle="Created automatically from vendors' official Models APIs — authoritative, so no manual approval. Metadata enriches over the next runs."
+      >
+        {auto.length === 0 ? (
+          <Empty>No auto-discovered models yet — every served model was already in the catalog.</Empty>
+        ) : (
+          <div className="divide-y divide-paper-line dark:divide-ink-line border border-paper-line dark:border-ink-line rounded-lg">
+            {auto.map((m) => (
+              <div key={m.id} className="px-4 py-2.5 flex items-center gap-3 text-sm">
+                <Link href={modelHref(m.id)} className="font-medium hover:text-accent">{m.name}</Link>
+                <span className="text-ink-muted text-xs">{m.vendor_name}</span>
+                <Badge tone="muted">auto</Badge>
+                <span className="ml-auto font-mono text-xs text-ink-muted">
+                  {m.input_per_mtok != null ? fmtPrice(m.input_per_mtok) : "price pending"}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
 
       {/* Quarantined values */}
       <Section

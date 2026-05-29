@@ -169,6 +169,7 @@ export function ModelsTable({ models }: { models: ModelOverview[] }) {
                     {m.is_open_weight && <Badge tone="ok">open</Badge>}
                     {m.status === "preview"    && <Badge tone="warn">preview</Badge>}
                     {m.status === "deprecated" && <Badge tone="muted">deprecated</Badge>}
+                    {m.auto_discovered && <Badge tone="muted">auto</Badge>}
                   </span>
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap text-ink-muted">

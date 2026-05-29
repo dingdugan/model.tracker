@@ -21,7 +21,9 @@ from dotenv import load_dotenv
 from .core.base import BenchmarkScraper, VendorScraper
 from .core.db import Database
 from .core.differ import build_snapshot_payload
-from .core.discovery import filter_unknown
+from .core.discovery import filter_unknown, is_known
+from .core.model_registry import register_extra
+from .core.promotion import derive_model, is_trusted
 from .core.registry import (
     discover_benchmark_scrapers,
     discover_discovery_sources,
@@ -63,6 +65,53 @@ def main() -> int:
     prior_models = {m["id"]: m for m in db.all_current_models()}
     prior_prices = {p["model_id"]: p for p in db.all_current_prices()}
     prior_bench_counts = db.latest_benchmark_counts()
+
+    # Fold already-known auto-discovered models into resolution so their prices
+    # and benchmark scores attach this run (registry = catalog ∪ auto).
+    register_extra(db.auto_discovered_models())
+
+    # ──────────────────────────────────────────────────────────────────────
+    # Discovery + auto-promotion — runs BEFORE the scrapers so newly-promoted
+    # models are resolvable when prices/benchmarks are attributed.
+    #   * vendor Models APIs are authoritative → unknown models AUTO-PROMOTE
+    #     into the catalog (sparse; enriched later by the normal scrapers).
+    #   * noisy leaderboard names are handled after the loop: recorded for
+    #     optional review, never auto-ingested, never nagged about.
+    # ──────────────────────────────────────────────────────────────────────
+    run_discovery = not args.skip_discovery and not args.vendor and not args.benchmark
+    auto_promoted: list[dict] = []
+    if run_discovery:
+        api_candidates: list[DiscoveryCandidate] = []
+        for src in discover_discovery_sources():
+            label = getattr(src, "source", src.__class__.__name__)
+            print(f"\n⌕ discovery {label} ...", end=" ", flush=True)
+            try:
+                found = src.discover()
+                api_candidates.extend(found)
+                print(f"({len(found)} advertised)")
+            except Exception as e:
+                print(f"FAIL — {type(e).__name__}: {e}")
+                db.record_error(stage="discovery", message=str(e), exc=e)
+
+        for c in filter_unknown([c for c in api_candidates if is_trusted(c)]):
+            spec = derive_model(c)
+            if not spec:
+                continue
+            try:
+                created = db.upsert_auto_model(
+                    model_id=spec["id"], vendor_id=spec["vendor_id"],
+                    slug=spec["slug"], name=spec["name"], aliases=spec["aliases"],
+                )
+                register_extra([spec])  # resolvable for the rest of this run
+                if created:
+                    auto_promoted.append(spec)
+            except Exception as e:
+                db.record_error(stage="auto-promote", message=str(e), exc=e)
+
+        if auto_promoted:
+            print(f"\n⬆️  auto-promoted {len(auto_promoted)} model(s) from vendor APIs:")
+            for s in auto_promoted:
+                print(f"    • {s['id']}  ({s['name']})")
 
     for s in vendor_scrapers + bench_scrapers:
         label = getattr(s, "vendor_id", None) or getattr(s, "benchmark", None) or s.__class__.__name__
@@ -114,32 +163,16 @@ def main() -> int:
                 db.record_error(stage="drift", benchmark=name, message=msg)
 
     # ──────────────────────────────────────────────────────────────────────
-    # Discovery layer — find models that exist in the wild but not in our
-    # registry. ONLY proposes candidates; never writes to `models`.
+    # Low-trust discovery (leaderboard names that didn't resolve) — recorded for
+    # optional review on /health. NEVER auto-ingested (anonymized aliases,
+    # speculative previews, garbage variants), and not nagged about.
     # ──────────────────────────────────────────────────────────────────────
-    run_discovery = not args.skip_discovery and not args.vendor and not args.benchmark
     fresh_candidates: list[DiscoveryCandidate] = []
     if run_discovery:
-        raw_candidates: list[DiscoveryCandidate] = []
-
-        # Signal 1: vendor Models APIs
-        for src in discover_discovery_sources():
-            label = getattr(src, "source", src.__class__.__name__)
-            print(f"\n⌕ discovery {label} ...", end=" ", flush=True)
-            try:
-                found = src.discover()
-                raw_candidates.extend(found)
-                print(f"({len(found)} advertised)")
-            except Exception as e:
-                print(f"FAIL — {type(e).__name__}: {e}")
-                db.record_error(stage="discovery", message=str(e), exc=e)
-
-        # Signal 2: names that ingestion scrapers couldn't resolve
+        low_trust: list[DiscoveryCandidate] = []
         for r in results:
-            raw_candidates.extend(r.unresolved)
-
-        # Keep only genuinely-unknown names (not known models or dated variants)
-        unknown = filter_unknown(raw_candidates)
+            low_trust.extend(r.unresolved)
+        unknown = filter_unknown(low_trust)
         new_count = 0
         for c in unknown:
             try:
@@ -148,13 +181,14 @@ def main() -> int:
                 fresh_candidates.append(c)
             except Exception as e:
                 db.record_error(stage="discovery-persist", message=str(e), exc=e)
+        print(f"\n🔎 {len(unknown)} unrecognized leaderboard name(s) recorded "
+              f"({new_count} new) — see /health, no action needed")
 
-        print(
-            f"\n🆕 discovery: {len(unknown)} unknown model name(s) "
-            f"({new_count} brand-new) → discovery_candidates"
-        )
-        for c in unknown:
-            print(f"    • [{c.source}] {c.reported_name}")
+        # Reconcile: candidates that now resolve (auto-promoted or hand-added)
+        # are marked promoted so they stop showing as outstanding.
+        promoted_n = db.mark_candidates_resolved_promoted(is_known)
+        if promoted_n:
+            print(f"   reconciled {promoted_n} candidate(s) now tracked → promoted")
 
     # Daily snapshot summarizing diffs
     if results and not args.vendor and not args.benchmark:
@@ -164,6 +198,12 @@ def main() -> int:
             prior_prices=prior_prices,
             today=date.today(),
         )
+        # Auto-promoted models are genuinely new — surface them in the changelog.
+        for spec in auto_promoted:
+            payload["new_models"].append(
+                {"id": spec["id"], "name": spec["name"], "vendor": spec["vendor_id"],
+                 "release_date": None, "auto": True}
+            )
         # Surface discovered candidates in the changelog feed.
         payload["discovery_candidates"] = [
             {"source": c.source, "reported_name": c.reported_name, "vendor_guess": c.vendor_guess}
@@ -172,7 +212,7 @@ def main() -> int:
         db.write_snapshot(date.today(), payload)
         print(f"\n📸 Snapshot {date.today()}: "
               f"{payload['models_count']} models, "
-              f"{len(payload['new_models'])} new, "
+              f"{len(payload['new_models'])} new ({len(auto_promoted)} auto), "
               f"{len(payload['price_changes'])} price changes, "
               f"{len(payload['discovery_candidates'])} discovery candidates")
 

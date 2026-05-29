@@ -367,6 +367,64 @@ class Database:
         ).execute()
         return True
 
+    def upsert_auto_model(self, *, model_id: str, vendor_id: str, slug: str,
+                          name: str, aliases: list[str]) -> bool:
+        """Create an auto-discovered model row if it doesn't already exist.
+
+        Returns True if newly created. Never clobbers an existing (possibly
+        hand-curated) row — if the id exists, this is a no-op. Sparse on purpose:
+        only id/slug/name come from the vendor API; price/context fill in later
+        via the normal scrapers (never fabricated here).
+        """
+        if self.dry_run:
+            print(f"  [dry-run] auto-promote model {model_id}: {name}")
+            return True
+        exists = self.client.table("models").select("id").eq("id", model_id).limit(1).execute()
+        if exists.data:
+            return False
+        self.client.table("models").insert(
+            {
+                "id": model_id,
+                "vendor_id": vendor_id,
+                "slug": slug,
+                "name": name,
+                "modalities": ["text"],
+                "status": "active",
+                "auto_discovered": True,
+            }
+        ).execute()
+        return True
+
+    def auto_discovered_models(self) -> list[dict[str, Any]]:
+        """All auto-discovered model rows (for registering into the registry)."""
+        if self.dry_run or self._client is None:
+            return []
+        res = self.client.table("models").select(
+            "id, slug, name"
+        ).eq("auto_discovered", True).execute()
+        return res.data or []
+
+    def mark_candidates_resolved_promoted(self, is_known) -> int:
+        """Reconcile: any 'new' candidate whose name now resolves (it was
+        auto-promoted or hand-added to a catalog) is marked 'promoted' so it
+        stops showing as outstanding. Returns how many were promoted."""
+        if self.dry_run or self._client is None:
+            return 0
+        res = (
+            self.client.table("discovery_candidates")
+            .select("id, reported_name")
+            .eq("status", "new")
+            .execute()
+        )
+        promoted = 0
+        for row in res.data or []:
+            if is_known(row.get("reported_name", "")):
+                self.client.table("discovery_candidates").update(
+                    {"status": "promoted"}
+                ).eq("id", row["id"]).execute()
+                promoted += 1
+        return promoted
+
     def open_candidates(self) -> list[dict[str, Any]]:
         """Candidates still awaiting review (status='new')."""
         if self.dry_run or self._client is None:
