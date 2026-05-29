@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from datetime import date
 from typing import Optional
 
@@ -14,16 +13,8 @@ from ..core.extractor import (
     parse_price_string,
     soup,
 )
+from ..core.model_registry import canon as _canon
 from ..core.schema import ModelRecord, PriceRecord, ScrapeResult
-
-
-def _canon(s: str) -> str:
-    """Canonicalize a slug for matching: lowercase, collapse separators."""
-    s = (s or "").strip().lower()
-    # Treat "/", "_", ".", " " all as the same separator, then collapse runs of "-".
-    s = re.sub(r"[\s/_.]+", "-", s)
-    s = re.sub(r"-+", "-", s).strip("-")
-    return s
 
 
 def llm_fallback_into_result(
@@ -61,8 +52,10 @@ def llm_fallback_into_result(
     for m in result.models:
         if m.vendor_id != vendor_id:
             continue
-        lookup[_canon(m.slug)] = m.id
-        lookup[_canon(m.name)] = m.id
+        for raw in (m.slug, m.name, *getattr(m, "aliases", [])):
+            key = _canon(raw)
+            if key:
+                lookup[key] = m.id
 
     if not lookup:
         return  # Empty catalog — nothing safe to map LLM output to.

@@ -18,6 +18,10 @@ class ModelRecord(BaseModel):
     vendor_id: str
     slug: str                           # 'gpt-5', 'claude-opus-4-7'
     name: str                           # display name
+    aliases: list[str] = Field(default_factory=list)  # extra external names that
+                                        # resolve to this model: benchmark display
+                                        # names, dated snapshots, platform-specific
+                                        # IDs. slug + name are matched automatically.
     family: Optional[str] = None        # 'gpt', 'claude', 'gemini'
     release_date: Optional[date] = None
     context_window: Optional[int] = None
