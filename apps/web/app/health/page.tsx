@@ -9,7 +9,7 @@ import {
 import { fmtDate, fmtPrice, modelHref } from "@/lib/format";
 import { Badge } from "@/components/Badge";
 
-export const revalidate = 1800;
+export const revalidate = 300;  // health reflects live pipeline state → refresh faster than model data
 
 export const metadata = {
   title: "Data Health — model.tracker",
