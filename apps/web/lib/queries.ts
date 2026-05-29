@@ -3,12 +3,60 @@ import type {
   BenchmarkScore,
   ChangelogDay,
   DailySnapshot,
+  DiscoveryCandidateRow,
   ModelOverview,
+  PendingChangeRow,
   PriceHistoryPoint,
+  ScrapeIssueRow,
+  StalePrice,
   Vendor,
 } from "./types";
 
 export const revalidate = 1800;
+
+// ── Data health (Phase D) ──────────────────────────────────────────────────
+
+export async function getDiscoveryCandidates(): Promise<DiscoveryCandidateRow[]> {
+  const { data, error } = await supabase
+    .from("discovery_candidates")
+    .select("source, reported_name, vendor_guess, occurrences, first_seen, last_seen")
+    .eq("status", "new")
+    .order("last_seen", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as DiscoveryCandidateRow[];
+}
+
+export async function getPendingChanges(): Promise<PendingChangeRow[]> {
+  const { data, error } = await supabase
+    .from("pending_changes")
+    .select("kind, model_id, field, prior_value, proposed_value, reason, occurrences, last_seen")
+    .eq("status", "pending")
+    .order("last_seen", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as PendingChangeRow[];
+}
+
+export async function getRecentIssues(limit = 30): Promise<ScrapeIssueRow[]> {
+  const { data, error } = await supabase
+    .from("recent_scrape_issues")
+    .select("stage, vendor_id, benchmark, error_class, occurred_at")
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []) as ScrapeIssueRow[];
+}
+
+export async function getStalePrices(days = 30): Promise<StalePrice[]> {
+  const cutoff = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+  const { data, error } = await supabase
+    .from("models_overview")
+    .select("id, name, vendor_name, price_effective_date, status, input_per_mtok")
+    .neq("status", "retired")
+    .not("input_per_mtok", "is", null)
+    .lt("price_effective_date", cutoff)
+    .order("price_effective_date", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as StalePrice[];
+}
 
 export async function getModels(): Promise<ModelOverview[]> {
   const { data, error } = await supabase

@@ -233,7 +233,11 @@
 
 ## Phase D — 可观测性 + 多路发现加固
 
-- [ ] 每日数据健康摘要（N 模型 / X 新候选 / Y 未解析 / Z 隔离 / W 超 30 天 stale 价）
-- [ ] 发现信号③④：厂商模型/文档页 + 博客/changelog RSS
-- [ ] 站点「数据健康」页：候选、未解析名、隔离值、stale 价可视化
-- [ ] `scrape_errors` 接出到摘要/页面
+- [x] 站点「数据健康」页：候选（按厂商分级）、隔离值、stale 价、scrape 问题可视化
+  证据: `apps/web/app/health/page.tsx` + 导航加 `Health`；`lib/queries.ts` 加 getDiscoveryCandidates/getPendingChanges/getRecentIssues/getStalePrices；`tsc --noEmit` 0 错
+- [x] 每日数据健康摘要：4 个 Stat（discovered / quarantined / stale / issues）+ GitHub issue（候选 + 隔离值）
+  证据: `/health` 顶部 stat row；`alert_candidates.py` issue 含两段；snapshot payload 含 discovery_candidates
+- [x] `scrape_errors` 脱敏接出
+  证据: `supabase/migrations/0006_data_health_views.sql` 建 `recent_scrape_issues` 视图（只暴露 stage/vendor/benchmark/error_class/occurred_at，**不含** message/traceback/url）+ grant anon；`/health` 展示
+- [~] 发现信号③④：厂商模型/文档页 + 博客/changelog RSS
+  **提议 defer（待用户确认）**：信号①（vendor Models API）已权威覆盖"tracked 厂商的新发布"这个核心目标，③④（解析各家模型页/RSS）是冗余且脆弱的抓取面，价值/成本比低。建议留作 follow-up，不阻塞健壮性大修收尾。
