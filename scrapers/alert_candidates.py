@@ -24,8 +24,32 @@ def main() -> int:
         return 0
 
     rows = db.open_candidates()
-    if not rows:
+    pending = db.open_pending()
+    if not rows and not pending:
         return 0  # silence = nothing to review
+
+    lines: list[str] = []
+
+    # Quarantined values first — these are higher urgency (a value looked wrong
+    # and we're holding the last-good one live until it's confirmed/reviewed).
+    if pending:
+        lines.append("## ⚠️ Quarantined values (held — not applied)")
+        lines.append(
+            "_A scraped value looked anomalous; the last-known-good value is still "
+            "live. It auto-applies if it persists, or set the row `status` in "
+            "`pending_changes` to `applied`/`rejected`._"
+        )
+        for p in pending:
+            lines.append(
+                f"- **{p.get('model_id')}** `{p.get('field')}`: "
+                f"{p.get('prior_value')} → {p.get('proposed_value')} "
+                f"— {p.get('reason')} (held {p.get('occurrences', 1)}×)"
+            )
+        lines.append("")
+
+    if not rows:
+        print("\n".join(lines))
+        return 0
 
     # High signal: a vendor we already track shipped something we don't have a
     # row for. Low signal: a model from a vendor we don't cover at all.
@@ -38,12 +62,12 @@ def main() -> int:
         else:
             untracked.append(r)
 
-    lines = [
-        "The discovery layer found model names **not in the catalog** — models we "
-        "may be failing to track. To adopt one, add it to its vendor catalog in "
-        "`scrapers/vendors/<vendor>.py` (with any benchmark aliases); it then "
-        "drops off this list automatically. To ignore one, mark its row "
-        "`status='dismissed'` in `discovery_candidates`.",
+    lines += [
+        "## 🆕 Unrecognized models (not in the catalog)",
+        "The discovery layer found model names we may be failing to track. To adopt "
+        "one, add it to its vendor catalog in `scrapers/vendors/<vendor>.py` (with "
+        "any benchmark aliases); it then drops off this list automatically. To "
+        "ignore one, mark its row `status='dismissed'` in `discovery_candidates`.",
         "",
         f"**{sum(len(v) for v in tracked.values())}** from vendors we track · "
         f"**{len(untracked)}** from other/unknown vendors.",

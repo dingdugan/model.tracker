@@ -10,6 +10,7 @@ from typing import Any, Optional
 from supabase import Client, create_client
 
 from .schema import BenchmarkRecord, DiscoveryCandidate, ModelRecord, PriceRecord, ScrapeResult
+from .validation import CONFIRM_THRESHOLD, elo_anomaly, price_anomaly
 
 
 def get_client() -> Client:
@@ -80,6 +81,29 @@ class Database:
         prev = self._latest_price(p.model_id)
         if prev and self._price_matches(prev, p):
             return  # unchanged
+        if prev:
+            # Anomaly gate: an egregious jump in any field is quarantined rather
+            # than allowed to overwrite the known-good price. Auto-applies once
+            # the same value persists CONFIRM_THRESHOLD runs.
+            reasons = [
+                r for r in (
+                    price_anomaly(prev.get("input_per_mtok"),        p.input_per_mtok),
+                    price_anomaly(prev.get("output_per_mtok"),       p.output_per_mtok),
+                    price_anomaly(prev.get("cached_input_per_mtok"), p.cached_input_per_mtok),
+                ) if r
+            ]
+            if reasons:
+                confirmed = self._quarantine_or_confirm(
+                    kind="price",
+                    model_id=p.model_id,
+                    field="price",
+                    prior=prev.get("input_per_mtok"),
+                    proposed=p.input_per_mtok,
+                    reason="; ".join(reasons),
+                    source_url=p.source_url,
+                )
+                if not confirmed:
+                    return  # held back — last-good price stays live
         if prev:  # real change — record it
             event: dict[str, Any] = {
                 "model_id":          p.model_id,
@@ -131,7 +155,130 @@ class Database:
             return
         if self._benchmark_already_recorded(b):
             return
+        # Anomaly gate for ELO: a slow-moving rating that leaps is suspect →
+        # quarantine instead of polluting the score history.
+        if b.score_unit == "elo":
+            prev = self._latest_benchmark_score(b.model_id, b.benchmark_name)
+            reason = elo_anomaly(prev, b.score)
+            if reason:
+                confirmed = self._quarantine_or_confirm(
+                    kind="benchmark",
+                    model_id=b.model_id,
+                    field=b.benchmark_name,
+                    prior=prev,
+                    proposed=b.score,
+                    reason=reason,
+                    source_url=b.source_url,
+                )
+                if not confirmed:
+                    return  # held back — history keeps the last-good score
         self.client.table("benchmark_scores").insert(row).execute()
+
+    def _latest_benchmark_score(self, model_id: str, benchmark_name: str) -> Optional[float]:
+        res = (
+            self.client.table("benchmark_scores")
+            .select("score, measured_at, scraped_at")
+            .eq("model_id", model_id)
+            .eq("benchmark_name", benchmark_name)
+            .order("measured_at", desc=True)
+            .order("scraped_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if not res.data:
+            return None
+        try:
+            return float(res.data[0]["score"])
+        except (TypeError, ValueError, KeyError):
+            return None
+
+    def _quarantine_or_confirm(
+        self,
+        *,
+        kind: str,
+        model_id: str,
+        field: str,
+        prior: Optional[float],
+        proposed: Optional[float],
+        reason: str,
+        source_url: Optional[str],
+    ) -> bool:
+        """Hold a suspicious value in pending_changes. Return True iff it should
+        be applied now (same value confirmed across CONFIRM_THRESHOLD runs).
+
+        A transient flip-flop keeps changing the proposed value, so its counter
+        resets and it never confirms — the known-good value stays live. A genuine
+        sustained change accumulates and auto-applies.
+        """
+        existing = (
+            self.client.table("pending_changes")
+            .select("id, proposed_value, occurrences, status")
+            .eq("kind", kind)
+            .eq("model_id", model_id)
+            .eq("field", field)
+            .limit(1)
+            .execute()
+        )
+        if existing.data:
+            row = existing.data[0]
+            same = _eq_num(row.get("proposed_value"), proposed)
+            if row.get("status") == "rejected" and same:
+                return False  # human said no to exactly this value — keep ignoring
+            if row.get("status") == "pending" and same:
+                occ = (row.get("occurrences") or 1) + 1
+                if occ >= CONFIRM_THRESHOLD:
+                    self.client.table("pending_changes").update(
+                        {"occurrences": occ, "status": "applied", "last_seen": "now()"}
+                    ).eq("id", row["id"]).execute()
+                    print(f"  [gate] {kind} {model_id}/{field}: confirmed after {occ} runs → applying")
+                    return True
+                self.client.table("pending_changes").update(
+                    {"occurrences": occ, "last_seen": "now()"}
+                ).eq("id", row["id"]).execute()
+                print(f"  [gate] {kind} {model_id}/{field}: held ({occ}/{CONFIRM_THRESHOLD}) — {reason}")
+                return False
+            # new/different proposed value → (re)open as pending
+            self.client.table("pending_changes").update(
+                {
+                    "prior_value": prior,
+                    "proposed_value": proposed,
+                    "reason": reason,
+                    "occurrences": 1,
+                    "status": "pending",
+                    "last_seen": "now()",
+                    "source_url": source_url,
+                }
+            ).eq("id", row["id"]).execute()
+            print(f"  [gate] {kind} {model_id}/{field}: quarantined — {reason}")
+            return False
+
+        self.client.table("pending_changes").insert(
+            {
+                "kind": kind,
+                "model_id": model_id,
+                "field": field,
+                "prior_value": prior,
+                "proposed_value": proposed,
+                "reason": reason,
+                "source_url": source_url,
+                "status": "pending",
+            }
+        ).execute()
+        print(f"  [gate] {kind} {model_id}/{field}: quarantined — {reason}")
+        return False
+
+    def open_pending(self) -> list[dict[str, Any]]:
+        """Quarantined changes still awaiting confirmation (status='pending')."""
+        if self.dry_run or self._client is None:
+            return []
+        res = (
+            self.client.table("pending_changes")
+            .select("kind, model_id, field, prior_value, proposed_value, reason, occurrences")
+            .eq("status", "pending")
+            .order("last_seen", desc=True)
+            .execute()
+        )
+        return res.data or []
 
     def _benchmark_already_recorded(self, b: BenchmarkRecord) -> bool:
         """De-dupe by (model_id, benchmark_name, source, measured_at).
@@ -297,6 +444,27 @@ class Database:
             return []
         res = self.client.table("current_prices").select("*").execute()
         return res.data or []
+
+    def latest_benchmark_counts(self) -> dict[str, int]:
+        """Per benchmark_name, how many models had a score at its most recent
+        measured_at. Used as the baseline for structural-drift detection."""
+        if self.dry_run or self._client is None:
+            return {}
+        res = self.client.table("benchmark_scores").select(
+            "benchmark_name, model_id, measured_at"
+        ).execute()
+        rows = res.data or []
+        latest: dict[str, str] = {}
+        for r in rows:
+            name, m = r.get("benchmark_name"), r.get("measured_at") or ""
+            if name and (name not in latest or m > latest[name]):
+                latest[name] = m
+        counts: dict[str, set] = {}
+        for r in rows:
+            name = r.get("benchmark_name")
+            if name and (r.get("measured_at") or "") == latest.get(name):
+                counts.setdefault(name, set()).add(r.get("model_id"))
+        return {k: len(v) for k, v in counts.items()}
 
 
 def _eq_num(a: Optional[float], b: Optional[float], eps: float = 1e-9) -> bool:
