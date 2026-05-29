@@ -86,3 +86,38 @@ export type ChangelogDay = {
   newModels: Array<{ id: string; name: string; vendor: string }>;
   priceChanges: PriceChangeEvent[];
 };
+
+export type DiscoveryCandidateRow = {
+  source: string;
+  reported_name: string;
+  vendor_guess: string | null;
+  occurrences: number;
+  first_seen: string;
+  last_seen: string;
+};
+
+export type PendingChangeRow = {
+  kind: "price" | "benchmark";
+  model_id: string;
+  field: string;
+  prior_value: number | null;
+  proposed_value: number | null;
+  reason: string;
+  occurrences: number;
+  last_seen: string;
+};
+
+export type ScrapeIssueRow = {
+  stage: string;
+  vendor_id: string | null;
+  benchmark: string | null;
+  error_class: string | null;
+  occurred_at: string;
+};
+
+export type StalePrice = {
+  id: string;
+  name: string;
+  vendor_name: string;
+  price_effective_date: string | null;
+};
