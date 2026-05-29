@@ -17,6 +17,13 @@ def discover_benchmark_scrapers() -> list[BenchmarkScraper]:
     return list(_discover("scrapers.benchmarks", BenchmarkScraper))
 
 
+def discover_discovery_sources() -> list:
+    """Import every module in discovery/ and collect DiscoverySource subclasses."""
+    from ..discovery.base import DiscoverySource
+
+    return list(_discover("scrapers.discovery", DiscoverySource))
+
+
 def _discover(package_name: str, base_cls: type) -> Iterable:
     pkg = importlib.import_module(package_name)
     seen: set[str] = set()
@@ -38,7 +45,11 @@ def _discover(package_name: str, base_cls: type) -> Iterable:
             if getattr(attr, "__module__", None) != module_full:
                 continue
             # Skip abstract subclasses that don't set the identifier
-            ident = getattr(attr, "vendor_id", None) or getattr(attr, "benchmark", None)
+            ident = (
+                getattr(attr, "vendor_id", None)
+                or getattr(attr, "benchmark", None)
+                or getattr(attr, "source", None)
+            )
             if not ident:
                 continue
             key = f"{module_full}.{attr.__name__}"

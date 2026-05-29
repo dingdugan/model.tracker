@@ -72,6 +72,20 @@ class BenchmarkRecord(BaseModel):
     measured_at: Optional[date] = None
 
 
+class DiscoveryCandidate(BaseModel):
+    """A model name seen in the wild that does NOT resolve to a known model.
+
+    Emitted by discovery sources (vendor Models APIs, pages) and by ingestion
+    scrapers when a reported name fails to resolve. It is only ever *proposed* —
+    the discovery layer never writes to the models table.
+    """
+
+    source: str                          # 'vendor-api:anthropic' | 'benchmark:lmsys' | ...
+    reported_name: str                   # raw name/id as the source reported it
+    vendor_guess: Optional[str] = None   # best-effort vendor id
+    raw_context: dict = Field(default_factory=dict)
+
+
 class ScrapeResult(BaseModel):
     """What every vendor / benchmark scraper returns."""
 
@@ -80,6 +94,7 @@ class ScrapeResult(BaseModel):
     models: list[ModelRecord] = Field(default_factory=list)
     prices: list[PriceRecord] = Field(default_factory=list)
     benchmarks: list[BenchmarkRecord] = Field(default_factory=list)
+    unresolved: list[DiscoveryCandidate] = Field(default_factory=list)
     fetched_at: datetime = Field(default_factory=datetime.utcnow)
 
     @property

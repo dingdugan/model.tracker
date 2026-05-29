@@ -21,7 +21,7 @@ from datetime import date
 
 from ..core.base import BenchmarkScraper
 from ..core.extractor import fetch_static
-from ..core.schema import BenchmarkRecord, ScrapeResult
+from ..core.schema import BenchmarkRecord, DiscoveryCandidate, ScrapeResult
 from ._mapping import resolve_model_id
 
 
@@ -76,6 +76,7 @@ class LMSysArenaScraper(BenchmarkScraper):
 
         available = list(lb_index.keys())
         total = 0
+        unresolved_seen: set[str] = set()
 
         for arena_slug, lb_slug, bench_name in LEADERBOARDS:
             entries = lb_index.get((arena_slug, lb_slug))
@@ -91,7 +92,20 @@ class LMSysArenaScraper(BenchmarkScraper):
                 if not name or rating is None:
                     continue
                 model_id = resolve_model_id(name)
-                if not model_id or model_id in seen:
+                if not model_id:
+                    # Unknown model on the leaderboard → surface as a discovery
+                    # candidate instead of silently dropping its score.
+                    if name not in unresolved_seen:
+                        unresolved_seen.add(name)
+                        result.unresolved.append(
+                            DiscoveryCandidate(
+                                source="benchmark:lmsys",
+                                reported_name=name,
+                                raw_context={"leaderboard": f"{arena_slug}/{lb_slug}"},
+                            )
+                        )
+                    continue
+                if model_id in seen:
                     continue
                 seen.add(model_id)
                 try:
@@ -115,6 +129,8 @@ class LMSysArenaScraper(BenchmarkScraper):
 
         if total == 0:
             print("  [lmsys] warning: 0 entries resolved across all leaderboards")
+        if result.unresolved:
+            print(f"  [lmsys] {len(result.unresolved)} unresolved names → discovery candidates")
         return result
 
 

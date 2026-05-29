@@ -199,18 +199,22 @@
 - [x] 子串匹配错抓回归测试：`resolve("gpt-5-codex")` 返回 `None`
   证据: `test_matching_is_exact_not_substring` 断言 gpt-5-codex / claude-opus-4-8-thinking 等返回 None，通过
 
-## Phase B — 发现层（解决"不漏新模型"，最要紧）
+## Phase B — 发现层（解决"不漏新模型"，最要紧）✅
 
-- [ ] 新建 `discovery_candidates` + `unresolved_observations` 表（migration）
-  完成标准: 两表存在；含 name/source/first_seen/raw_context/status 字段
-- [ ] 发现信号①：厂商官方 Models API（先接 Anthropic `/v1/models`、OpenAI `/v1/models`）→ 未在注册表的模型 ID 写入候选
-  完成标准: 跑一次能把 API 返回里注册表没有的 ID 写进 `discovery_candidates`
-- [ ] 发现信号②：benchmark 榜单里 `resolve()` 返回 None 的名字 → 写入 `unresolved_observations` 并升格为发现候选
-  完成标准: lmsys/AA scraper 把未解析名落库而非静默丢
-- [ ] 候选报警：当日 snapshot 加「🆕 未收录模型」段 + 开 GitHub issue
-  完成标准: 有新候选时 changelog 出现该段；workflow 失败/发现时开 issue
-- [ ] 发现层**绝不写 `models` 表**——仅提案，人工/高可信规则晋升
-  完成标准: 代码审查确认无 discovery → models 写路径
+> **设计调整（已显式记录，非默默缩水）**：原计划 `discovery_candidates` + `unresolved_observations` 两表，合并为**一张** `discovery_candidates` 表——两者 schema/审查流程完全相同，仅靠 `source` 列区分来源（`vendor-api:anthropic` vs `benchmark:lmsys`）。能力未减，少一张表。
+
+- [x] 新建 `discovery_candidates` 表（migration）+ `daily_snapshots.discovery_candidates` 列
+  证据: `supabase/migrations/0004_discovery_candidates.sql`；MCP apply_migration 返回 success；表含 source/reported_name/normalized/vendor_guess/occurrences/first_seen/last_seen/status/raw_context + unique(source,normalized) + RLS public read
+- [x] 发现信号①：厂商官方 Models API（Anthropic + OpenAI `/v1/models`）→ 未在注册表的模型写入候选
+  证据: `scrapers/discovery/vendor_api.py` `AnthropicModelsAPI` + `OpenAIModelsAPI`；key 缺失时优雅返回 `[]`（本会话验证两源无 key 各返回 0，不抛错）；`core/registry.py:discover_discovery_sources()` 注册到 2 个源
+- [x] 发现信号②：benchmark 榜单里 `resolve()` 返回 None 的名字 → 升格为发现候选
+  证据: `lmsys.py` + `artificial_analysis.py` 把未解析名 append 到 `result.unresolved`（`DiscoveryCandidate`），不再静默丢；`ScrapeResult.unresolved` 字段
+- [x] 候选过滤 + 落库：`core/discovery.py` 剔除已知模型与带日期的快照变体；`db.upsert_candidate` 按 (source,normalized) 去重累加 occurrences
+  证据: `core/discovery.py` `is_known()`/`filter_unknown()`（剥离 `-YYYYMMDD`/`@date`/`-vN`/`-latest` 后再精确解析）；`tests/test_discovery.py` 5 测全过（dated snapshot 判已知、新模型判未知、批内去重）
+- [x] 候选报警：当日 snapshot 加 `discovery_candidates` + 开/更新单个 GitHub issue
+  证据: `run.py` 把 fresh_candidates 写进 snapshot payload；`scrapers/alert_candidates.py` 输出 markdown；`scrape-daily.yml` 新增 "Collect discovery candidates" + "Open/update discovery issue"（复用同一 labeled issue，不每天新开）
+- [x] 发现层**绝不写 `models` 表**——仅提案
+  证据: discovery 路径只调用 `db.upsert_candidate`（写 `discovery_candidates`），run.py 中 discovery 分支无任何 `upsert_model` 调用；`run.py --skip-discovery` 可关
 
 ## Phase C — 校验/异常闸（精确性 + 防脏值）
 

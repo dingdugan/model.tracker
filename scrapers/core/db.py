@@ -9,7 +9,7 @@ from typing import Any, Optional
 
 from supabase import Client, create_client
 
-from .schema import BenchmarkRecord, ModelRecord, PriceRecord, ScrapeResult
+from .schema import BenchmarkRecord, DiscoveryCandidate, ModelRecord, PriceRecord, ScrapeResult
 
 
 def get_client() -> Client:
@@ -168,6 +168,70 @@ class Database:
             self.append_price(p)
         for b in result.benchmarks:
             self.append_benchmark(b)
+
+    # ──────────────────────────────────────────────────────────────────────
+    # Discovery candidates (Phase B) — proposed only, NEVER written to `models`
+    # ──────────────────────────────────────────────────────────────────────
+    def upsert_candidate(self, c: "DiscoveryCandidate") -> bool:
+        """Record a discovery candidate. Returns True if it's newly created.
+
+        Keyed on (source, normalized): a repeat sighting bumps occurrences and
+        last_seen rather than duplicating. Never touches the `models` table.
+        """
+        from .model_registry import canon
+
+        normalized = canon(c.reported_name)
+        if not normalized:
+            return False
+        if self.dry_run:
+            print(f"  [dry-run] candidate {c.source}: {c.reported_name}")
+            return True
+
+        existing = (
+            self.client.table("discovery_candidates")
+            .select("id, occurrences, status")
+            .eq("source", c.source)
+            .eq("normalized", normalized)
+            .limit(1)
+            .execute()
+        )
+        if existing.data:
+            row = existing.data[0]
+            self.client.table("discovery_candidates").update(
+                {
+                    "last_seen": "now()",
+                    "occurrences": (row.get("occurrences") or 1) + 1,
+                    "reported_name": c.reported_name,
+                    "vendor_guess": c.vendor_guess,
+                    "raw_context": c.raw_context or {},
+                }
+            ).eq("id", row["id"]).execute()
+            return False
+
+        self.client.table("discovery_candidates").insert(
+            {
+                "source":        c.source,
+                "reported_name": c.reported_name,
+                "normalized":    normalized,
+                "vendor_guess":  c.vendor_guess,
+                "raw_context":   c.raw_context or {},
+                "status":        "new",
+            }
+        ).execute()
+        return True
+
+    def open_candidates(self) -> list[dict[str, Any]]:
+        """Candidates still awaiting review (status='new')."""
+        if self.dry_run or self._client is None:
+            return []
+        res = (
+            self.client.table("discovery_candidates")
+            .select("source, reported_name, vendor_guess, first_seen, occurrences")
+            .eq("status", "new")
+            .order("last_seen", desc=True)
+            .execute()
+        )
+        return res.data or []
 
     # ──────────────────────────────────────────────────────────────────────
     # Errors
