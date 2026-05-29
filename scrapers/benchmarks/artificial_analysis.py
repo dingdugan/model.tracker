@@ -10,7 +10,7 @@ from datetime import date
 
 from ..core.base import BenchmarkScraper
 from ..core.extractor import clean_text_for_llm, fetch_rendered, llm_extract
-from ..core.schema import BenchmarkRecord, ScrapeResult
+from ..core.schema import BenchmarkRecord, DiscoveryCandidate, ScrapeResult
 from ._mapping import resolve_model_id
 
 
@@ -57,12 +57,22 @@ class ArtificialAnalysisScraper(BenchmarkScraper):
             print(f"  [artificial-analysis] LLM extraction failed: {e}")
             return result
 
+        unresolved_seen: set[str] = set()
         for entry in data.get("models", []):
             name = entry.get("name")
             if not name:
                 continue
             model_id = resolve_model_id(name)
             if not model_id:
+                if name not in unresolved_seen:
+                    unresolved_seen.add(name)
+                    result.unresolved.append(
+                        DiscoveryCandidate(
+                            source="benchmark:artificial-analysis",
+                            reported_name=name,
+                            raw_context={},
+                        )
+                    )
                 continue
 
             quality = entry.get("quality")

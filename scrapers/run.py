@@ -21,8 +21,13 @@ from dotenv import load_dotenv
 from .core.base import BenchmarkScraper, VendorScraper
 from .core.db import Database
 from .core.differ import build_snapshot_payload
-from .core.registry import discover_benchmark_scrapers, discover_vendor_scrapers
-from .core.schema import ScrapeResult
+from .core.discovery import filter_unknown
+from .core.registry import (
+    discover_benchmark_scrapers,
+    discover_discovery_sources,
+    discover_vendor_scrapers,
+)
+from .core.schema import DiscoveryCandidate, ScrapeResult
 
 
 def main() -> int:
@@ -34,6 +39,7 @@ def main() -> int:
     parser.add_argument("--benchmark", help="only run this benchmark source")
     parser.add_argument("--skip-benchmarks", action="store_true")
     parser.add_argument("--skip-vendors", action="store_true")
+    parser.add_argument("--skip-discovery", action="store_true")
     args = parser.parse_args()
 
     db = Database(dry_run=args.dry_run)
@@ -86,6 +92,49 @@ def main() -> int:
                 exc=e,
             )
 
+    # ──────────────────────────────────────────────────────────────────────
+    # Discovery layer — find models that exist in the wild but not in our
+    # registry. ONLY proposes candidates; never writes to `models`.
+    # ──────────────────────────────────────────────────────────────────────
+    run_discovery = not args.skip_discovery and not args.vendor and not args.benchmark
+    fresh_candidates: list[DiscoveryCandidate] = []
+    if run_discovery:
+        raw_candidates: list[DiscoveryCandidate] = []
+
+        # Signal 1: vendor Models APIs
+        for src in discover_discovery_sources():
+            label = getattr(src, "source", src.__class__.__name__)
+            print(f"\n⌕ discovery {label} ...", end=" ", flush=True)
+            try:
+                found = src.discover()
+                raw_candidates.extend(found)
+                print(f"({len(found)} advertised)")
+            except Exception as e:
+                print(f"FAIL — {type(e).__name__}: {e}")
+                db.record_error(stage="discovery", message=str(e), exc=e)
+
+        # Signal 2: names that ingestion scrapers couldn't resolve
+        for r in results:
+            raw_candidates.extend(r.unresolved)
+
+        # Keep only genuinely-unknown names (not known models or dated variants)
+        unknown = filter_unknown(raw_candidates)
+        new_count = 0
+        for c in unknown:
+            try:
+                if db.upsert_candidate(c):
+                    new_count += 1
+                fresh_candidates.append(c)
+            except Exception as e:
+                db.record_error(stage="discovery-persist", message=str(e), exc=e)
+
+        print(
+            f"\n🆕 discovery: {len(unknown)} unknown model name(s) "
+            f"({new_count} brand-new) → discovery_candidates"
+        )
+        for c in unknown:
+            print(f"    • [{c.source}] {c.reported_name}")
+
     # Daily snapshot summarizing diffs
     if results and not args.vendor and not args.benchmark:
         payload = build_snapshot_payload(
@@ -94,11 +143,17 @@ def main() -> int:
             prior_prices=prior_prices,
             today=date.today(),
         )
+        # Surface discovered candidates in the changelog feed.
+        payload["discovery_candidates"] = [
+            {"source": c.source, "reported_name": c.reported_name, "vendor_guess": c.vendor_guess}
+            for c in fresh_candidates
+        ]
         db.write_snapshot(date.today(), payload)
         print(f"\n📸 Snapshot {date.today()}: "
               f"{payload['models_count']} models, "
               f"{len(payload['new_models'])} new, "
-              f"{len(payload['price_changes'])} price changes")
+              f"{len(payload['price_changes'])} price changes, "
+              f"{len(payload['discovery_candidates'])} discovery candidates")
 
     # Vercel revalidation
     hook = os.environ.get("VERCEL_DEPLOY_HOOK_URL")
