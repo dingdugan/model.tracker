@@ -218,14 +218,18 @@
 - [x] **修复 Phase A 回归（由 Phase B fail-loud 抓出）**：精确匹配把 arena 的 `-thinking`/`-it`/带日期变体也卡掉了，arena-elo 32→15。加 `model_registry.base_form()` + `resolve_benchmark()`（精确→剥离受控的"模式/快照"后缀再精确；**绝不剥 size/version 等身份 token**，故不会错配），benchmark scraper 改用之。候选按 `infer_vendor()` 分级（track 厂商=高信号 vs 其他=折叠摘要），`alert_candidates.py` 据此分区
   证据: `tests/test_discovery.py` 新增 mode-variant 恢复、身份 token 不剥离、untracked 仍未知、infer_vendor 共 15 测全过；arena 计数恢复待重跑 workflow 验证
 
-## Phase C — 校验/异常闸（精确性 + 防脏值）
+## Phase C — 校验/异常闸（精确性 + 防脏值）✅
 
-- [ ] `pending_changes` 隔离表（migration）
-- [ ] 价格异常闸：变动 > X% 或超出注册表 `expected_price_range` → 隔离 + 报警，不自动覆盖
-  完成标准: 构造一个 3x 跳变价 → 进 `pending_changes`，不进 `prices`
-- [ ] ELO 异常闸：单次跳动 > ±N 分 → 隔离 + 报警
-- [ ] 结构漂移检测：每个 benchmark 记录上次解析条数，本次 0 或骤降 → 报警（命中 arena `text/coding`→`code/overall` 那类）
-  完成标准: 模拟某 leaderboard 返回 0 行 → 报警；现有 lmsys 正常不报
+- [x] `pending_changes` 隔离表（migration）
+  证据: `supabase/migrations/0005_pending_changes.sql`；MCP apply 成功；含 kind/model_id/field/prior_value/proposed_value/reason/occurrences/status + unique(kind,model_id,field) + RLS
+- [x] 价格异常闸：变动超过 3× → 隔离 + 报警，不自动覆盖；同值持续 2 次自动确认应用
+  证据: `core/validation.py:price_anomaly()`（>3× 或 <1/3）；`db.append_price` 任一字段异常 → `_quarantine_or_confirm`，未确认则 `return`（保留 last-good，不进 `prices`）；2-strikes 防止合法大变动被永久卡住；`tests/test_validation.py` 验证 $5↔$15 翻跳两个方向都被拦
+- [x] ELO 异常闸：单次跳动 > ±100 分 → 隔离 + 报警
+  证据: `core/validation.py:elo_anomaly()`；`db.append_benchmark` 对 `score_unit=='elo'` 启用，`_latest_benchmark_score` 取上次值比较；非 elo 暂不门控
+- [x] 结构漂移检测：benchmark 解析数比上次骤降 >50%（且基数≥5）→ 报警
+  证据: `db.latest_benchmark_counts()` 取基线，`run.py` 跑后对比本次每 benchmark 解析数，骤降则 `record_error(stage='drift')` + 打印 ⚠️；命中 arena `text/coding`→`code/overall` 那类静默少抓
+- [x] 隔离值在告警 issue 中可见
+  证据: `alert_candidates.py` 顶部新增「⚠️ Quarantined values」段（`db.open_pending()`），高于新模型候选段
 
 ## Phase D — 可观测性 + 多路发现加固
 

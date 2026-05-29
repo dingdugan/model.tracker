@@ -62,6 +62,7 @@ def main() -> int:
     # Snapshot prior state for diff (only useful in real-write mode)
     prior_models = {m["id"]: m for m in db.all_current_models()}
     prior_prices = {p["model_id"]: p for p in db.all_current_prices()}
+    prior_bench_counts = db.latest_benchmark_counts()
 
     for s in vendor_scrapers + bench_scrapers:
         label = getattr(s, "vendor_id", None) or getattr(s, "benchmark", None) or s.__class__.__name__
@@ -91,6 +92,26 @@ def main() -> int:
                 benchmark=getattr(s, "benchmark", None),
                 exc=e,
             )
+
+    # ──────────────────────────────────────────────────────────────────────
+    # Structural drift detection — a benchmark that resolved far fewer models
+    # than last run usually means the source restructured (e.g. arena.ai moving
+    # text/coding → code/overall) and we're silently losing data. Alert, don't
+    # fail silently.
+    # ──────────────────────────────────────────────────────────────────────
+    if results and not args.vendor and not args.benchmark:
+        cur_models: dict[str, set] = {}
+        for r in results:
+            for b in r.benchmarks:
+                cur_models.setdefault(b.benchmark_name, set()).add(b.model_id)
+        cur_counts = {k: len(v) for k, v in cur_models.items()}
+        for name, prev_n in prior_bench_counts.items():
+            cur_n = cur_counts.get(name, 0)
+            if prev_n >= 5 and cur_n < prev_n * 0.5:
+                msg = (f"benchmark '{name}' coverage dropped {prev_n} → {cur_n} "
+                       f"(possible source restructure)")
+                print(f"  ⚠️  DRIFT: {msg}")
+                db.record_error(stage="drift", benchmark=name, message=msg)
 
     # ──────────────────────────────────────────────────────────────────────
     # Discovery layer — find models that exist in the wild but not in our
