@@ -3,7 +3,7 @@ import { Badge } from "@/components/Badge";
 import { getModels } from "@/lib/queries";
 import { countryFlag, fmtDate, modelHref } from "@/lib/format";
 
-export const revalidate = 1800;
+export const revalidate = 300;
 
 export default async function TimelinePage() {
   const models = await getModels().catch(() => []);
