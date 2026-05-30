@@ -216,7 +216,7 @@
 - [x] 发现层**绝不写 `models` 表**——仅提案
   证据: discovery 路径只调用 `db.upsert_candidate`（写 `discovery_candidates`），run.py 中 discovery 分支无任何 `upsert_model` 调用；`run.py --skip-discovery` 可关
 - [x] **修复 Phase A 回归（由 Phase B fail-loud 抓出）**：精确匹配把 arena 的 `-thinking`/`-it`/带日期变体也卡掉了，arena-elo 32→15。加 `model_registry.base_form()` + `resolve_benchmark()`（精确→剥离受控的"模式/快照"后缀再精确；**绝不剥 size/version 等身份 token**，故不会错配），benchmark scraper 改用之。候选按 `infer_vendor()` 分级（track 厂商=高信号 vs 其他=折叠摘要），`alert_candidates.py` 据此分区
-  证据: `tests/test_discovery.py` 新增 mode-variant 恢复、身份 token 不剥离、untracked 仍未知、infer_vendor 共 15 测全过；arena 计数恢复待重跑 workflow 验证
+  证据: `tests/test_discovery.py` 新增 mode-variant 恢复、身份 token 不剥离、untracked 仍未知、infer_vendor 共 15 测全过；**已验证** workflow run 26615478178：arena-elo 15→30 恢复；候选按构造排除已知模型，无 tracked 模型遗漏
 
 ## Phase C — 校验/异常闸（精确性 + 防脏值）✅
 
@@ -258,4 +258,5 @@
   证据: `alert_candidates.py` 只输出 quarantined；`.github/workflows/scrape-daily.yml` 步骤/标题/label 改为 data-health
 - [x] 前端：homepage 加 `auto` 徽章、/health 加「Auto-discovered」段 + stat
   证据: `ModelsTable.tsx` auto badge；`health/page.tsx` 新段 + `getAutoDiscovered`；`ModelOverview.auto_discovered`；`tsc` 0 错
-- [x] 28/28 scraper 测试通过；自动晋升活体验证待重跑 workflow
+- [x] 28/28 scraper 测试通过；**自动晋升活体已验证**
+  证据: workflow run 26650315977：⬆️ 从 Anthropic API 自动晋升 4 个（Opus 4.5/4.1/4、Sonnet 4），reconcile 8 候选→promoted；DB 验证 4 个 auto 模型价格由爬虫自动补（Opus 4.5 $5/$25、4.1 $15/$75 等真实值）、Arena Elo 自动挂（1472/1448/1424/1399）、context 留空不编造；线上 `/` 显示 `auto` 徽章、`/health` Auto-discovered 段已填充（curl 验证 HTML）
