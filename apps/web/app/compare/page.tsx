@@ -1,7 +1,7 @@
 import { getModels } from "@/lib/queries";
 import { CompareClient } from "./CompareClient";
 
-export const revalidate = 1800;
+export const revalidate = 300;
 
 export default async function ComparePage() {
   const models = await getModels().catch(() => []);

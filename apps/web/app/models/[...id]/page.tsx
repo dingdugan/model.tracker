@@ -7,7 +7,7 @@ import { countryFlag, fmtDate, fmtElo, fmtPct, fmtPrice, fmtTokens } from "@/lib
 import { PriceChart } from "./PriceChart";
 import { BenchmarkRadar } from "./BenchmarkRadar";
 
-export const revalidate = 1800;
+export const revalidate = 300;
 
 export default async function ModelPage({ params }: { params: Promise<{ id: string[] }> }) {
   const { id: segments } = await params;

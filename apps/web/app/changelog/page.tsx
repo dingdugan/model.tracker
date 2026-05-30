@@ -3,7 +3,7 @@ import { getChangelog } from "@/lib/queries";
 import { fmtDate, fmtPrice, fmtPctChange, modelHref } from "@/lib/format";
 import { Badge } from "@/components/Badge";
 
-export const revalidate = 1800;
+export const revalidate = 300;
 
 export default async function ChangelogPage() {
   const days = await getChangelog(60).catch(() => []);
