@@ -9,7 +9,10 @@ import {
 import { fmtDate, fmtPrice, modelHref } from "@/lib/format";
 import { Badge } from "@/components/Badge";
 
-export const revalidate = 300;  // health reflects live pipeline state → refresh faster than model data
+// Operator/debug page — always render the live DB state (no cache). You visit
+// this deliberately to check the pipeline right now, so the per-visit query
+// latency is worth it. Public data pages stay on ISR.
+export const dynamic = "force-dynamic";
 
 export const metadata = {
   title: "Data Health — model.tracker",
