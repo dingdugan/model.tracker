@@ -152,6 +152,7 @@ export function ModelsTable({ models }: { models: ModelOverview[] }) {
                 <Th key={s.key} num>{s.label}</Th>
               ))}
               <Th onClick={() => toggleSort("parameters_b")} active={sortKey === "parameters_b"} dir={sortDir} num>Params</Th>
+              <Th>Modality</Th>
               <Th>License</Th>
             </tr>
           </thead>
@@ -186,6 +187,13 @@ export function ModelsTable({ models }: { models: ModelOverview[] }) {
                 <td className="px-3 py-2 text-right font-mono text-ink-muted">
                   {m.parameters_b != null ? `${m.parameters_b}B` : "—"}
                 </td>
+                <td className="px-3 py-2 whitespace-nowrap">
+                  {m.modalities?.length ? (
+                    <span className="text-xs font-mono text-ink-muted">{m.modalities.join(" · ")}</span>
+                  ) : (
+                    <span className="text-xs text-ink-muted/50">—</span>
+                  )}
+                </td>
                 <td className="px-3 py-2">
                   {m.license ? (
                     <span className="text-xs font-mono text-ink-muted">{m.license}</span>
@@ -197,7 +205,7 @@ export function ModelsTable({ models }: { models: ModelOverview[] }) {
             ))}
             {sorted.length === 0 && (
               <tr>
-                <td colSpan={8 + (eloExpanded ? ELO_SUBS.length : 0)} className="px-3 py-10 text-center text-ink-muted">No models match.</td>
+                <td colSpan={9 + (eloExpanded ? ELO_SUBS.length : 0)} className="px-3 py-10 text-center text-ink-muted">No models match.</td>
               </tr>
             )}
           </tbody>
