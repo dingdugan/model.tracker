@@ -260,3 +260,17 @@
   证据: `ModelsTable.tsx` auto badge；`health/page.tsx` 新段 + `getAutoDiscovered`；`ModelOverview.auto_discovered`；`tsc` 0 错
 - [x] 28/28 scraper 测试通过；**自动晋升活体已验证**
   证据: workflow run 26650315977：⬆️ 从 Anthropic API 自动晋升 4 个（Opus 4.5/4.1/4、Sonnet 4），reconcile 8 候选→promoted；DB 验证 4 个 auto 模型价格由爬虫自动补（Opus 4.5 $5/$25、4.1 $15/$75 等真实值）、Arena Elo 自动挂（1472/1448/1424/1399）、context 留空不编造；线上 `/` 显示 `auto` 徽章、`/health` Auto-discovered 段已填充（curl 验证 HTML）
+
+## Phase F — 发现源扩展：Google + 阿里 DashScope（2026-06-09 会话共识）
+
+> 背景：Gemini 3.5 Flash / Qwen3.7 Max 在 discovery_candidates 躺了 15 天（榜单源永不自动晋升），
+> 暴露可信发现源只覆盖 Anthropic+OpenAI 的缺口。用户选择根治方案：补官方 Models API 源。
+
+- [x] `GoogleModelsAPI` 发现源（Gemini API `/v1beta/models`，分页 + generateContent 过滤 + gemini/gemma 前缀闸）
+  证据: `scrapers/discovery/vendor_api.py` GoogleModelsAPI；端点/响应格式经 ai.google.dev/api/models 官方文档核实；`tests/test_vendor_api_sources.py` 5 测（剥 models/ 前缀、拒 embedding/tts/image SKU、无 key 优雅跳过）
+- [x] `QwenModelsAPI` 发现源（DashScope OpenAI 兼容 `/v1/models`，qwen/qwq/qvq 前缀闸防第三方托管模型错归属）
+  证据: `scrapers/discovery/vendor_api.py` QwenModelsAPI；端点经实测验证（无 key 返回 401 + OpenAI 风格错误）；`tests/test_vendor_api_sources.py` 4 测（deepseek/llama/glm 托管模型拒收、非文本 SKU 拒收、无 key 跳过）；`DASHSCOPE_BASE_URL` 可切北京区
+- [x] workflow env 补 `OPENAI_API_KEY`（既有 bug：从未配进 env，OpenAI 源在 CI 一直跳过）+ `GEMINI_API_KEY` + `DASHSCOPE_API_KEY`
+  证据: `.github/workflows/scrape-daily.yml` env 段 4 个 discovery key；`.env.example` 同步
+- [ ] 用户设置 secrets：`gh secret set OPENAI_API_KEY` / `GEMINI_API_KEY` / `DASHSCOPE_API_KEY`（缺哪个对应源就跳过，不报错）
+- [ ] secrets 就位后跑一次 workflow，验证 Gemini 3.5 Flash / Qwen3.7 Max 自动晋升入库
