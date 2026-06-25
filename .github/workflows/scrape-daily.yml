@@ -25,6 +25,9 @@ jobs:
       SUPABASE_URL:          ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_KEY:  ${{ secrets.SUPABASE_SERVICE_KEY }}
       ANTHROPIC_API_KEY:     ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY:        ${{ secrets.OPENAI_API_KEY }}
+      GEMINI_API_KEY:        ${{ secrets.GEMINI_API_KEY }}
+      DASHSCOPE_API_KEY:     ${{ secrets.DASHSCOPE_API_KEY }}
       EXTRACTOR_MODEL:       claude-haiku-4-5
       VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
       PLAYWRIGHT_HEADLESS:   "1"
